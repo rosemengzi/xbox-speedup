@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#10130f">
+<meta name="msapplication-TileColor" content="#10130f">
+<meta name="msapplication-config" content="/browserconfig.xml">
+<title>Xbox 下载加速器</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#42d65d">
+<link rel="manifest" href="/site.webmanifest">
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:#10130f; --surface:#181c16; --surface2:#20261d; --line:#333d2f; --line2:#45513f;
+    --fg:#f3f6ed; --muted:#aab3a3; --soft:#dce7c8; --accent:#5fdb73; --accent2:#ffd166;
+    --bad:#ff6b6b; --good:#43d180; --shadow:0 16px 46px rgba(0,0,0,.28);
+  }
+  *{box-sizing:border-box}
+  html{min-width:320px}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:radial-gradient(circle at 12% -12%,rgba(95,219,115,.14),transparent 28rem),linear-gradient(180deg,#10130f,#151912);color:var(--fg);font-size:14px;line-height:1.5;letter-spacing:0}
+  button,select{font:inherit}
+  button{min-height:36px;border:1px solid transparent;border-radius:8px;background:var(--accent);color:#071008;padding:8px 13px;font-size:13px;font-weight:750;cursor:pointer;transition:transform .15s ease,filter .15s ease,border-color .15s ease}
+  button:hover{filter:brightness(1.05)} button:active{transform:translateY(1px)}
+  button.ghost{background:var(--surface2);color:var(--fg);border-color:var(--line2);font-weight:650}
+  button.slim{min-height:31px;padding:5px 9px;font-size:12px}
+  select{min-height:34px;background:var(--surface2);color:var(--fg);border:1px solid var(--line2);border-radius:8px;padding:5px 30px 5px 10px;font-size:13px;cursor:pointer}
+  .shell{width:min(1360px,100%);margin:0 auto;padding:18px 22px 24px}
+  header{position:sticky;top:0;z-index:20;border-bottom:1px solid rgba(69,81,63,.72);background:rgba(16,19,15,.9);backdrop-filter:blur(14px)}
+  .topbar{width:min(1360px,100%);margin:0 auto;padding:12px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .xicon{width:38px;height:38px;border-radius:9px;display:block;object-fit:cover;box-shadow:0 0 0 1px rgba(255,255,255,.12),0 8px 22px rgba(0,0,0,.28);flex:0 0 auto}
+  h1{font-size:20px;line-height:1.15;margin:0;font-weight:780}
+  .sub{display:none}
+  .pills{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .pill{display:inline-flex;align-items:center;gap:7px;min-height:29px;padding:5px 10px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 3px rgba(255,107,107,.12)} .dot.on{background:var(--good);box-shadow:0 0 0 3px rgba(67,209,128,.13)}
+  .hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(380px,.75fr);gap:16px;margin-top:16px}
+  .statusPanel,.card,.opsPanel{background:rgba(24,28,22,.94);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
+  .statusPanel{padding:16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center}
+  .statusTitle{font-size:13px;color:var(--muted);margin-bottom:8px}.dnsTarget{font-size:28px;font-weight:800;line-height:1.1;word-break:break-all}.statusHint{margin-top:8px;color:var(--muted);font-size:13px}
+  .toolbar{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}.busy{min-height:20px;margin-top:8px;color:var(--accent2);font-size:12px;text-align:right}
+  .opsPanel{padding:12px}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.metric{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px}.metric .label{font-size:12px;color:var(--muted)}.metric .value{margin-top:3px;font-size:20px;font-weight:780;font-variant-numeric:tabular-nums}
+  .quickSettings{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.quickItem{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px}.quickItem label,.quickItem .qLabel{color:var(--muted);font-size:12px;white-space:nowrap}.quickItem select{width:100%;min-width:0}.quickItem.logAll{grid-template-columns:minmax(0,1fr) auto}
+  .grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,.65fr);gap:16px;margin-top:16px;align-items:start}.stack{display:flex;flex-direction:column;gap:16px;min-width:0}.card{overflow:hidden}
+  .card h2{min-height:48px;font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px}.card h2 .side{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .tableWrap{overflow-x:auto} table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle} th{color:var(--muted);font-weight:650;font-size:12px;background:rgba(32,38,29,.55)} tr:last-child td{border-bottom:0} td.num{font-variant-numeric:tabular-nums}
+  .platformName{font-weight:750}.muted{color:var(--muted)}.small{font-size:12px}.best{color:var(--accent);font-weight:760}.tag{display:inline-flex;align-items:center;min-height:24px;padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid var(--line2);color:var(--soft);background:var(--surface2)}.tag.warn{color:#ffe09a;border-color:#806b35;background:#302914}.actions{display:flex;gap:6px;justify-content:flex-end}
+  .sw{position:relative;display:inline-block;width:40px;height:22px;flex:0 0 auto}.sw input{display:none}.sw span{position:absolute;inset:0;background:#4b5445;border:1px solid #596550;border-radius:999px;cursor:pointer;transition:.2s}.sw span:before{content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;background:#f6f8ef;border-radius:50%;transition:.2s}.sw input:checked+span{background:rgba(95,219,115,.86);border-color:rgba(95,219,115,.95)}.sw input:checked+span:before{transform:translateX(18px);background:#071008}
+  .mobilePlatforms{display:none;padding:10px;gap:10px}.platCard{border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:11px}.platHead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.platDesc{margin-top:2px;color:var(--muted);font-size:12px}.platStats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.stat{background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:7px;min-width:0}.stat .label{color:var(--muted);font-size:11px}.stat .value{margin-top:1px;font-size:13px;font-weight:750;word-break:break-all}.platFoot{display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:center;margin-top:10px}.toggleLine{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}.platActions{display:flex;gap:6px;justify-content:flex-end}
+  .hiddenbar{padding:10px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}.chip{display:inline-flex;align-items:center;min-height:27px;padding:4px 9px;margin:3px;border-radius:999px;background:var(--surface2);border:1px solid var(--line2);font-size:12px;cursor:pointer;color:var(--muted)}.chip:hover{border-color:var(--accent);color:var(--fg)}
+  .rules{padding:8px 14px}.rule{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px 10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}.rule:last-child{border-bottom:0}.rule code{color:#eef3e7;white-space:normal;word-break:break-all}.rulePath{display:flex;gap:7px;align-items:center;min-width:0}.ruleNote{grid-column:2 / -1;color:var(--muted);font-size:12px;margin-top:-3px}
+  .logsCard{position:sticky;top:74px}.logfilter{display:flex;gap:6px;padding:9px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}.logfilter .f{min-height:29px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface2);font-size:12px;cursor:pointer;color:var(--muted)}.logfilter .f.active{background:var(--accent);color:#071008;border-color:var(--accent);font-weight:800}.logs{height:590px;overflow-y:auto;font-size:12px}.logrow{padding:8px 12px;border-bottom:1px solid var(--line)}.logmeta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.logrow .t{color:var(--muted);font-variant-numeric:tabular-nums}.k{padding:1px 7px;border-radius:999px;font-size:11px;font-weight:800;line-height:1.6;white-space:nowrap}.k[data-k="DNS-A"]{background:#173924;color:#7ff0a2}.k[data-k="DNS-AAAA"]{background:#34284a;color:#cbb6ff}.k[data-k="302"],.k[data-k="PROXY"]{background:#173f33;color:#78e6bd}.k[data-k="BLOCK"]{background:#431d24;color:#ff97a0}.k[data-k="FORWARD"]{background:#2d332b;color:#c5cebd}.k[data-k="SPEEDTEST"]{background:#403416;color:#f7d172}.k[data-k="SYNC"]{background:#1b3837;color:#80dfd7}.k[data-k="SYSTEM"]{background:#30342e;color:#d6dccf}.logrow .h{color:#f2f4ec;font-weight:650}.logrow .c{color:var(--muted)}.logrow .d{color:#cdd5c5;margin-top:4px;word-break:break-all;line-height:1.45}
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:50;padding:34px 16px;overflow:auto}.modal.show{display:block}.modalbox{max-width:860px;margin:0 auto;background:var(--surface);border:1px solid var(--line2);border-radius:8px;box-shadow:var(--shadow);overflow:hidden}.modalhead{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:760}.modalbody{max-height:72vh;overflow:auto}.help{padding:16px;color:var(--soft)}.help h3{margin:0 0 8px;font-size:15px}.help p{margin:8px 0;color:var(--muted)}.help ul{margin:8px 0 14px;padding-left:20px;color:var(--muted)}.help li{margin:6px 0}.help code{color:var(--fg);background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:1px 5px}
+  .spin{display:inline-block;width:10px;height:10px;border:2px solid var(--accent2);border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle;margin-right:6px}@keyframes sp{to{transform:rotate(360deg)}} footer{padding:18px 22px 0;color:var(--muted);font-size:12px;text-align:center}
+  @media(max-width:1120px){.hero,.grid{grid-template-columns:1fr}.logsCard{position:static}.logs{height:430px}.quickSettings{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media(max-width:760px){body{font-size:13px}.shell{padding:10px 10px 18px}.topbar{padding:10px;display:block}.brand{gap:9px}.xicon{width:32px;height:32px;border-radius:8px}h1{font-size:18px}.pills{justify-content:flex-start;margin-top:9px;gap:6px}.pill{font-size:11px;min-height:27px;padding:4px 8px}.hero{gap:10px;margin-top:10px}.statusPanel{grid-template-columns:1fr;padding:12px;gap:10px}.dnsTarget{font-size:23px}.statusHint{font-size:12px}.toolbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}.toolbar button{width:100%;padding:7px 8px}.busy{text-align:left}.opsPanel{padding:9px}.metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.metric{padding:8px}.metric .label{font-size:11px}.metric .value{font-size:17px}.quickSettings{grid-template-columns:1fr 1fr}.quickItem{padding:7px;grid-template-columns:1fr}.quickItem.logAll{grid-template-columns:1fr auto}.grid{gap:10px;margin-top:10px}.stack{gap:10px}.card h2{min-height:44px;padding:10px 12px}.tableWrap{display:none}.mobilePlatforms{display:grid;padding:8px}.platCard{padding:10px}.platStats{grid-template-columns:1fr 1fr;gap:6px}.stat{padding:6px}.stat .label{font-size:10px}.stat .value{font-size:12px}.platFoot{grid-template-columns:auto auto;gap:8px}.platActions{grid-column:1 / -1;display:grid;grid-template-columns:repeat(3,1fr)}.rule{grid-template-columns:auto minmax(0,1fr);align-items:start}.rule .tag{grid-column:2}.rulePath{display:block}.rulePath .muted{display:block;margin:1px 0}.ruleNote{grid-column:2}.logs{height:360px}.modal{padding:0}.modalbox{min-height:100vh;border:0;border-radius:0}.modalbody{max-height:none}th,td{padding:9px 10px}}
+  @media(max-width:430px){.toolbar{grid-template-columns:1fr 1fr}.toolbar button:first-child{grid-column:1 / -1}.quickSettings{grid-template-columns:1fr}.platStats{grid-template-columns:1fr 1fr}.platActions{grid-template-columns:repeat(3,minmax(0,1fr))}.platActions button{padding:5px 6px}.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header>
+  <div class="topbar">
+    <div class="brand">
+      <img class="xicon" src="/favicon.svg" alt="" aria-hidden="true">
+      <h1>Xbox 下载加速器</h1>
+      <div id="sub" class="sub"></div>
+    </div>
+    <div class="pills" id="svcPills"></div>
+  </div>
+</header>
+
+<main class="shell">
+  <section class="hero">
+    <div class="statusPanel">
+      <div>
+        <div class="statusTitle">游戏机 DNS 指向</div>
+        <div class="dnsTarget" id="dnsTarget">--</div>
+        <div class="statusHint" id="advtip">正在读取服务状态</div>
+      </div>
+      <div>
+        <div class="toolbar">
+          <button onclick="speedtest('')">全量测速</button>
+          <button class="ghost" onclick="syncIP()">同步 IP</button>
+          <button class="ghost" onclick="refresh()">刷新</button>
+        </div>
+        <div id="busy" class="busy"></div>
+      </div>
+    </div>
+    <div class="opsPanel">
+      <div class="metrics">
+        <div class="metric"><div class="label">启用平台</div><div class="value" id="mEnabled">--</div></div>
+        <div class="metric"><div class="label">可用 IP</div><div class="value" id="mIPs">--</div></div>
+        <div class="metric"><div class="label">最快延迟</div><div class="value" id="mRTT">--</div></div>
+      </div>
+      <div class="quickSettings">
+        <div class="quickItem"><span class="qLabel">自动测速</span><select id="setSpeed" onchange="changeSpeed()"></select></div>
+        <div class="quickItem"><span class="qLabel">同步列表</span><select id="setSync" onchange="changeSync()"></select></div>
+        <div class="quickItem logAll"><span class="qLabel">记录全部 DNS 查询</span><label class="sw"><input type="checkbox" id="setLogAll" onchange="toggleLogAll()"><span></span></label></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="stack">
+      <div class="card">
+        <h2>平台加速 <span class="muted small" id="platformSummary"></span></h2>
+        <div class="tableWrap">
+          <table id="platTable">
+            <thead><tr><th>平台</th><th>启用</th><th>测速</th><th>IP 池</th><th>当前最快 IP</th><th>延迟</th><th>带宽</th><th>IP 数</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="mobilePlatforms" id="platCards"></div>
+        <div class="hiddenbar" id="hiddenPlats" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <h2>
+          <span>302 重写层</span>
+          <span class="side">
+            <button class="ghost slim" onclick="openRedirectHelp()">说明</button>
+            <span class="toggleLine">启用 <label class="sw"><input type="checkbox" id="redEnabled" onchange="toggleRedirect()"><span></span></label></span>
+            <span class="toggleLine">智能兜底 <label class="sw"><input type="checkbox" id="redSmart" onchange="toggleSmart()"><span></span></label></span>
+          </span>
+        </h2>
+        <div class="rules" id="rules"></div>
+      </div>
+    </div>
+
+    <div class="card logsCard">
+      <h2>实时连接日志 <span class="muted small" id="logcount"></span></h2>
+      <div class="logfilter" id="logfilter"></div>
+      <div class="logs" id="logs"></div>
+    </div>
+  </section>
+  <footer>DNS 指向本机即生效 · 修改开关即时保存 · 重写层启用后需重启容器以占用 80 端口</footer>
+</main>
+
+<div id="modal" class="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modalbox">
+    <div class="modalhead"><span id="modalTitle"></span><button class="ghost slim" onclick="closeModal()">关闭</button></div>
+    <div class="modalbody" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+let cfg = null;
+
+async function api(path, opts){ const r = await fetch(path, opts); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+function fmtRtt(v){ return v==null||v<0 ? '--' : v.toFixed(0)+' ms'; }
+function fmtSpd(v){ return v==null||v<0 ? '--' : (v<0.01?'失败':v.toFixed(2)+' MiB/s'); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function attr(s){ return esc(s).replace(/'/g,'&#39;'); }
+function isReverseRule(r){ return /\.cn$/i.test(r.from||'') && /\.com$/i.test(r.to||''); }
+
+async function refresh(){
+  const st = await api('/api/status');
+  cfg = await api('/api/config');
+  const ip = st.advertise_ip || '本机 IP';
+  document.getElementById('dnsTarget').textContent = ip;
+  document.getElementById('advtip').textContent = st.advertise_ip ? '把 Xbox / 主机的首选 DNS 设置为这个地址' : '未探测到本机地址，请按部署环境填写容器 IP';
+
+  const pills = [['DNS', true],['IPv6 过滤', st.ipv6_filter],['重写层', st.proxy_running],['智能兜底', st.smart_fallback]];
+  document.getElementById('svcPills').innerHTML = pills.map(([n,on])=>`<span class="pill"><span class="dot ${on?'on':''}"></span>${esc(n)}</span>`).join('');
+  document.getElementById('redEnabled').checked = st.redirect_enabled;
+  document.getElementById('redSmart').checked = st.smart_fallback;
+  document.getElementById('busy').innerHTML = st.speedtest_running ? '<span class="spin"></span>测速进行中...' : '';
+
+  const visible = (st.platforms||[]).filter(p=>!p.hidden);
+  const enabled = visible.filter(p=>p.enabled).length;
+  const totalIPs = visible.reduce((sum,p)=>sum+(p.ip_count||0),0);
+  const bestRTTs = visible.map(p=>p.best_rtt).filter(v=>v!=null && v>=0);
+  const minRTT = bestRTTs.length ? Math.min(...bestRTTs) : -1;
+  document.getElementById('mEnabled').textContent = enabled + ' / ' + visible.length;
+  document.getElementById('mIPs').textContent = totalIPs;
+  document.getElementById('mRTT').textContent = fmtRtt(minRTT);
+  document.getElementById('platformSummary').textContent = visible.length + ' 个显示，' + enabled + ' 个启用';
+
+  renderPlatformTable(visible);
+  renderPlatformCards(visible);
+  renderHidden((st.platforms||[]).filter(p=>p.hidden));
+  renderSettings();
+  renderRules();
+}
+
+function renderPlatformTable(platforms){
+  const tb = document.querySelector('#platTable tbody');
+  tb.innerHTML = platforms.map(p=>`<tr>
+    <td><div class="platformName">${esc(p.key)}</div><div class="muted small">${esc(p.description)}</div></td>
+    <td><label class="sw"><input type="checkbox" ${p.enabled?'checked':''} onchange="togglePlatform('${attr(p.key)}','enabled',this.checked)"><span></span></label></td>
+    <td><label class="sw"><input type="checkbox" ${p.speedtest?'checked':''} onchange="togglePlatform('${attr(p.key)}','speedtest',this.checked)"><span></span></label></td>
+    <td><span class="tag">${esc(p.pool)}</span></td>
+    <td class="best">${esc(p.best_ip)||'--'}<div class="muted small">${esc(p.best_loc)}</div></td>
+    <td class="num">${fmtRtt(p.best_rtt)}</td><td class="num">${fmtSpd(p.best_speed)}</td><td class="num">${p.ip_count||0}</td>
+    <td><div class="actions"><button class="ghost slim" onclick="speedtest('${attr(p.pool)}')">测速</button><button class="ghost slim" onclick="openPool('${attr(p.pool)}')">详情</button><button class="ghost slim" onclick="hidePlat('${attr(p.key)}')">隐藏</button></div></td>
+  </tr>`).join('');
+}
+
+function renderPlatformCards(platforms){
+  const el = document.getElementById('platCards');
+  el.innerHTML = platforms.map(p=>`<article class="platCard">
+    <div class="platHead"><div><div class="platformName">${esc(p.key)}</div><div class="platDesc">${esc(p.description)}</div></div><span class="tag">${esc(p.pool)}</span></div>
+    <div class="platStats">
+      <div class="stat"><div class="label">最快 IP</div><div class="value best">${esc(p.best_ip)||'--'}</div></div>
+      <div class="stat"><div class="label">地区</div><div class="value">${esc(p.best_loc)||'--'}</div></div>
+      <div class="stat"><div class="label">延迟</div><div class="value">${fmtRtt(p.best_rtt)}</div></div>
+      <div class="stat"><div class="label">带宽 / IP</div><div class="value">${fmtSpd(p.best_speed)} · ${p.ip_count||0}</div></div>
+    </div>
+    <div class="platFoot">
+      <span class="toggleLine">启用 <label class="sw"><input type="checkbox" ${p.enabled?'checked':''} onchange="togglePlatform('${attr(p.key)}','enabled',this.checked)"><span></span></label></span>
+      <span class="toggleLine">测速 <label class="sw"><input type="checkbox" ${p.speedtest?'checked':''} onchange="togglePlatform('${attr(p.key)}','speedtest',this.checked)"><span></span></label></span>
+      <div class="platActions"><button class="ghost slim" onclick="speedtest('${attr(p.pool)}')">测速</button><button class="ghost slim" onclick="openPool('${attr(p.pool)}')">详情</button><button class="ghost slim" onclick="hidePlat('${attr(p.key)}')">隐藏</button></div>
+    </div>
+  </article>`).join('');
+}
+
+function renderHidden(hidden){
+  const el = document.getElementById('hiddenPlats');
+  if(!hidden.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML = '已隐藏，点击恢复：' + hidden.map(p=>`<span class="chip" onclick="unhidePlat('${attr(p.key)}')">${esc(p.key)}</span>`).join('');
+}
+async function hidePlat(key){ if(!cfg.platforms[key]) cfg.platforms[key]={}; cfg.platforms[key].hidden=true; cfg.platforms[key].enabled=false; cfg.platforms[key].speedtest=false; await saveCfg(); refresh(); }
+async function unhidePlat(key){ if(!cfg.platforms[key]) cfg.platforms[key]={}; cfg.platforms[key].hidden=false; await saveCfg(); refresh(); }
+
+const SPEED_OPTS=[{label:'关闭',en:false,cron:''},{label:'每 3 小时',en:true,cron:'0 */3 * * *'},{label:'每 6 小时',en:true,cron:'0 */6 * * *'},{label:'每 12 小时',en:true,cron:'0 */12 * * *'},{label:'每天',en:true,cron:'0 4 * * *'}];
+const SYNC_OPTS=[{label:'关闭',en:false,cron:''},{label:'每天',en:true,cron:'0 4 * * *'},{label:'每 3 天',en:true,cron:'0 4 */3 * *'},{label:'每周',en:true,cron:'0 4 * * 0'}];
+function fillSelect(id,opts,enabled,cron){
+  const sel=document.getElementById(id);
+  let idx = enabled ? opts.findIndex(o=>o.en && o.cron===cron) : opts.findIndex(o=>!o.en);
+  let html=opts.map((o,i)=>`<option value="${i}">${esc(o.label)}</option>`).join('');
+  if(idx<0){ html+=`<option value="-1">自定义(${esc(cron)})</option>`; idx=-1; }
+  sel.innerHTML=html; sel.value=String(idx);
+}
+function renderSettings(){ fillSelect('setSpeed',SPEED_OPTS,cfg.speedtest.enabled,cfg.speedtest.schedule); fillSelect('setSync',SYNC_OPTS,cfg.ip_sync.enabled,cfg.ip_sync.schedule); document.getElementById('setLogAll').checked=!!cfg.log_all_queries; }
+async function changeSpeed(){ const o=SPEED_OPTS[+document.getElementById('setSpeed').value]; if(!o) return; cfg.speedtest.enabled=o.en; if(o.cron) cfg.speedtest.schedule=o.cron; await saveCfg(); flash('自动测速：'+o.label); }
+async function changeSync(){ const o=SYNC_OPTS[+document.getElementById('setSync').value]; if(!o) return; cfg.ip_sync.enabled=o.en; if(o.cron) cfg.ip_sync.schedule=o.cron; await saveCfg(); flash('自动同步：'+o.label); }
+async function toggleLogAll(){ cfg.log_all_queries=document.getElementById('setLogAll').checked; await saveCfg(); flash('已'+(cfg.log_all_queries?'开启':'关闭')+'记录全部查询'); }
+
+function renderRules(){
+  const el = document.getElementById('rules');
+  if(!cfg || !cfg.redirect.rules){ el.innerHTML='<div class="muted small">无规则</div>'; return; }
+  el.innerHTML = cfg.redirect.rules.map((r,i)=>{
+    const reverse = isReverseRule(r);
+    return `<div class="rule">
+      <label class="sw"><input type="checkbox" ${r.enabled?'checked':''} onchange="toggleRule(${i},this.checked)"><span></span></label>
+      <div class="rulePath"><code>${esc(r.from)}</code> <span class="muted">到</span> <code>${esc(r.to)}</code></div>
+      ${reverse?'<span class="tag warn">反向绕回</span>':''}
+      ${reverse?'<div class="ruleNote">用于 cn 域名回源很慢时绕到 com；通常无需开启。</div>':''}
+    </div>`;
+  }).join('');
+}
+
+function openRedirectHelp(){
+  document.getElementById('modal').classList.add('show');
+  document.getElementById('modalTitle').textContent = '302 重写层说明';
+  document.getElementById('modalBody').innerHTML = `<div class="help">
+    <h3>什么时候开启</h3>
+    <p>302 重写层用于把 Xbox 下载域名在不同 CDN 域名之间重定向。它只参与 HTTP 下载链接跳转，不承载几十 GB 的下载流量。</p>
+    <ul>
+      <li><code>.com 到 .cn</code>：把国际域名引到国内 CDN，通常是默认推荐方向。开启智能兜底后，如果目标 CDN 缺资源或返回异常，会自动绕回原地址，避免下载失败。</li>
+      <li><code>.cn 到 .com</code>：这是反向绕回，用于少数情况下 cn 域名回源很慢，反而不如给 com 域名配置代理后走代理下载。正常情况下保持关闭。</li>
+    </ul>
+    <h3>推荐配置</h3>
+    <ul>
+      <li>一般家庭网络：开启 <code>.com 到 .cn</code> 和智能兜底，关闭反向绕回。</li>
+      <li>如果确认 <code>assets1.xboxlive.cn</code> 下载很慢，并且路由器或网关已经能让 <code>assets1.xboxlive.com</code> 走代理，再单独开启 <code>assets1.xboxlive.cn 到 assets1.xboxlive.com</code>。</li>
+      <li>改动后建议观察实时日志。出现 302 记录说明重写层已经命中；如果下载失败，优先关闭反向规则或保留智能兜底。</li>
+    </ul>
+  </div>`;
+}
+
+async function saveCfg(){ await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}); }
+async function togglePlatform(key,field,val){ if(!cfg.platforms[key]) cfg.platforms[key]={enabled:false,speedtest:false,pinned_ip:''}; cfg.platforms[key][field]=val; await saveCfg(); refresh(); }
+async function toggleRedirect(){ cfg.redirect.enabled=document.getElementById('redEnabled').checked; await saveCfg(); refresh(); }
+async function toggleSmart(){ cfg.redirect.smart_fallback=document.getElementById('redSmart').checked; await saveCfg(); refresh(); }
+async function toggleRule(i,val){ cfg.redirect.rules[i].enabled=val; await saveCfg(); }
+
+async function openPool(name){
+  document.getElementById('modal').classList.add('show');
+  document.getElementById('modalTitle').textContent='IP 池 · '+name;
+  document.getElementById('modalBody').innerHTML='<div class="muted" style="padding:20px">加载中...</div>';
+  const d=await api('/api/pool?name='+encodeURIComponent(name));
+  const rows=(d.records||[]).map(r=>`<tr${r.ip===d.best?' class="best"':''}><td>${esc(r.ip)}${r.ip===d.best?' *':''}</td><td>${esc(r.location)}</td><td class="num">${fmtRtt(r.rtt_ms)}</td><td class="num">${fmtSpd(r.speed_mbps)}</td></tr>`).join('');
+  document.getElementById('modalBody').innerHTML=`<div class="tableWrap" style="display:block"><table><thead><tr><th>IP</th><th>位置</th><th>延迟</th><th>带宽</th></tr></thead><tbody>${rows}</tbody></table></div>`+`<div class="muted small" style="padding:10px 14px;border-top:1px solid var(--line)">全部 IP 都会 ping；带宽仅测延迟最低的前 N 个。-- 表示仅 ping、未测带宽，失败表示下载测速失败。</div>`;
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show'); }
+async function speedtest(pool){ await api('/api/speedtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pool})}); flash('已触发测速：'+(pool||'全部')); setTimeout(refresh,600); }
+async function syncIP(){ await api('/api/sync',{method:'POST'}); flash('已触发 IP 同步'); }
+function flash(msg){ const s=document.getElementById('advtip'); const old=s.textContent; s.textContent=msg; setTimeout(()=>s.textContent=old,2500); }
+
+const logsEl = document.getElementById('logs');
+let logN = 0;
+let logFilter = '全部';
+const LOG_CATS = {'全部': null,'DNS': ['DNS-A','DNS-AAAA','FORWARD','BLOCK'],'302': ['302','PROXY'],'测速/同步': ['SPEEDTEST','SYNC'],'系统': ['SYSTEM']};
+function logVisible(kind){ const s=LOG_CATS[logFilter]; return !s || s.includes(kind); }
+function renderLogFilter(){ document.getElementById('logfilter').innerHTML = Object.keys(LOG_CATS).map(k=>`<span class="f${k===logFilter?' active':''}" onclick="setLogFilter('${attr(k)}')">${esc(k)}</span>`).join(''); }
+function setLogFilter(k){ logFilter=k; renderLogFilter(); logsEl.querySelectorAll('.logrow').forEach(r=>{ r.style.display = logVisible(r.dataset.kind)?'':'none'; }); }
+function addLog(e){
+  const t = new Date(e.time).toLocaleTimeString('zh-CN',{hour12:false});
+  const row = document.createElement('div');
+  row.className='logrow'; row.dataset.kind=e.kind;
+  let meta = `<div class="logmeta"><span class="t">${t}</span><span class="k" data-k="${esc(e.kind)}">${esc(e.kind)}</span>`;
+  if(e.host) meta += `<span class="h">${esc(e.host)}</span>`;
+  if(e.client) meta += `<span class="c">${esc(e.client)}</span>`;
+  meta += `</div>`;
+  row.innerHTML = meta + (e.detail ? `<div class="d">${esc(e.detail)}</div>` : '');
+  if(!logVisible(e.kind)) row.style.display='none';
+  logsEl.prepend(row);
+  if(++logN>500 && logsEl.lastChild) logsEl.removeChild(logsEl.lastChild);
+  document.getElementById('logcount').textContent = logN+' 条';
+}
+async function initLogs(){
+  const recent = await api('/api/logs/recent');
+  recent.slice(-200).forEach(addLog);
+  const es = new EventSource('/api/logs');
+  es.onmessage = ev => addLog(JSON.parse(ev.data));
+}
+
+renderLogFilter(); refresh(); initLogs();
+setInterval(refresh, 8000);
+</script>
+</body>
+</html>

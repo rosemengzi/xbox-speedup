@@ -1,0 +1,18 @@
+services:
+  xbox-speedup:
+    image: xbox-speedup:latest
+    build: .
+    container_name: xbox-speedup
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+    networks:
+      xbox_macvlan:
+        ipv4_address: ${XBOX_IP:-192.168.1.250}
+    volumes:
+      - ${XBOX_DATA_DIR:-./run-data}:/data
+      - ${XBOX_CERT_DIR:-./certs}:/certs:ro
+networks:
+  xbox_macvlan:
+    external: true
+    name: ${XBOX_NETWORK:-xbox_macvlan}

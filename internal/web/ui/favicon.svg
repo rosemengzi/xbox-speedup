@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Xbox Download Accelerator">
+  <defs>
+    <radialGradient id="g" cx="32%" cy="24%" r="78%">
+      <stop offset="0" stop-color="#9aff9f"/>
+      <stop offset="0.48" stop-color="#42d65d"/>
+      <stop offset="1" stop-color="#0f6b2f"/>
+    </radialGradient>
+    <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#10130f"/>
+  <circle cx="256" cy="256" r="188" fill="url(#g)" filter="url(#s)"/>
+  <circle cx="256" cy="256" r="188" fill="none" stroke="rgba(255,255,255,.18)" stroke-width="10"/>
+  <path d="M114 119c40-37 90-58 142-58s102 21 142 58c-50 4-99 30-142 71-43-41-92-67-142-71Z" fill="#fff" opacity=".94"/>
+  <path d="M82 159c-22 33-35 73-35 116 0 61 27 117 70 155 18-66 56-131 110-188-46-46-96-76-145-83Z" fill="#fff" opacity=".94"/>
+  <path d="M430 159c-49 7-99 37-145 83 54 57 92 122 110 188 43-38 70-94 70-155 0-43-13-83-35-116Z" fill="#fff" opacity=".94"/>
+  <path d="M256 293c-54 62-85 125-92 168 28 15 59 23 92 23s64-8 92-23c-7-43-38-106-92-168Z" fill="#fff" opacity=".94"/>
+</svg>

@@ -1,0 +1,22 @@
+{
+  "name": "Xbox 下载加速器",
+  "short_name": "Xbox 加速器",
+  "description": "Xbox 下载加速器 Web 管理界面",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "theme_color": "#10130f",
+  "background_color": "#10130f",
+  "display": "standalone"
+}

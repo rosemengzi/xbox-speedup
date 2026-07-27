@@ -1,0 +1,18 @@
+# Local deployment configuration and runtime data
+.env
+run-data/
+certs/
+
+# Build outputs
+bin/
+repo/
+xbox-speedup
+
+# Editor, macOS, and Synology metadata
+.DS_Store
+._*
+**/._*
+PaxHeader/
+**/PaxHeader/
+@eaDir/
+**/@eaDir/

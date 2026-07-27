@@ -1,0 +1,116 @@
+# ============================================================================
+# 平台域名表 / 测速 IP 池定义  (从原项目 DnsMappingGenerator.HostRules 移植)
+#
+# 这是“几乎不变”的静态数据，改它是改本文件、不是改 Go 代码。
+# IP 列表本身会从上游 GitHub 在线同步（见 internal/ipsync），这里只定义
+# “哪个平台用哪个 IP 池、池用哪个文件、用什么 URL 测速”。
+# ============================================================================
+
+# 测速 IP 池：每个池对应一个上游 IP 列表文件 + 一个测速 URL。
+# test_url 为空表示该池只用 ping 排序（无现成的下载测速地址）。
+pools:
+  Akamai:
+    ip_file: IP.Akamai.txt
+    test_url: "http://xvcf1.xboxlive.com/Z/routing/extraextralarge.txt"
+  XboxCn1:
+    ip_file: IP.XboxCn1.txt
+    test_url: "http://assets1.xboxlive.cn/Z/routing/extraextralarge.txt"
+  XboxCn2:
+    ip_file: IP.XboxCn2.txt
+    test_url: "http://dlassets.xboxlive.cn/public/content/77d0d59a-34b7-4482-a1c7-c0abbed17de2/db7a9163-9c5e-43a8-b8bf-fe0208149792/1.0.0.3.65565c9c-8a1e-438a-b714-2d9965f0485b/ChildOfLight_1.0.0.3_x64__b6krnev7r9sf8"
+  XboxApp:
+    ip_file: IP.XboxApp.txt
+    test_url: ""        # 微软商店包地址需 API 解析；留空=仅 ping 排序
+  Ps:
+    ip_file: IP.Ps.txt
+    test_url: "http://gst.prod.dl.playstation.net/networktest/get_192m"
+
+# 平台域名表：
+#   hosts     = 加速域名（DNS 返回该平台 IP 池里测速最快的 IP）
+#   redirects = 内置的 302 改写源域名（from→to），用于 CDN 归并（如战网区域域名→Akamai）
+#   blacklist = 屏蔽域名（DNS 返回 0.0.0.0，屏蔽会干扰加速的域名）
+platforms:
+  XboxGlobal:
+    description: "Xbox Global (.com)"
+    pool: Akamai
+    hosts:
+      - assets1.xboxlive.com
+      - assets2.xboxlive.com
+      - xvcf1.xboxlive.com
+      - xvcf2.xboxlive.com
+      - d1.xboxlive.com
+      - d2.xboxlive.com
+      - dlassets.xboxlive.com
+      - dlassets2.xboxlive.com
+
+  XboxCn1:
+    description: "Xbox CN1 (.cn assets)"
+    pool: XboxCn1
+    hosts:
+      - assets1.xboxlive.cn
+      - assets2.xboxlive.cn
+      - d1.xboxlive.cn
+      - d2.xboxlive.cn
+
+  XboxCn2:
+    description: "Xbox CN2 (.cn dlassets)"
+    pool: XboxCn2
+    hosts:
+      - dlassets.xboxlive.cn
+      - dlassets2.xboxlive.cn
+
+  XboxApp:
+    description: "MS Store / Xbox App"
+    pool: XboxApp
+    hosts:
+      - dl.delivery.mp.microsoft.com
+      - tlu.dl.delivery.mp.microsoft.com
+      - 1d.tlu.dl.delivery.mp.microsoft.com
+
+  Ps:
+    description: "Sony PlayStation"
+    pool: Ps
+    hosts:
+      - gst.prod.dl.playstation.net
+      - gs2.ww.prod.dl.playstation.net
+      - zeus.dl.playstation.net
+      - ares.dl.playstation.net
+
+  Ns:
+    description: "Nintendo Switch"
+    pool: Akamai
+    hosts:
+      - atum.hac.lp1.d4c.nintendo.net
+      - nemof.p01.lp1.nemo.srv.nintendo.net
+      - nemof.hac.lp1.nemo.srv.nintendo.net
+      - ctest-ul.p01.lp1.ctest.srv.nintendo.net
+      - ctest-dl.p01.lp1.ctest.srv.nintendo.net
+      - ctest-ul-lp1.cdn.nintendo.net
+      - ctest-dl-lp1.cdn.nintendo.net
+    blacklist:
+      - atum-eda.hac.lp1.d4c.nintendo.net
+      - atum-4ff.hac.lp1.d4c.nintendo.net
+
+  Ea:
+    description: "Electronic Arts"
+    pool: Akamai
+    hosts:
+      - origin-a.akamaihd.net
+    blacklist:
+      - prod.cloudflare.cdn.ea.com
+      - ssl-lvlt.cdn.ea.com
+
+  Battle:
+    description: "Battle.net (战网)"
+    pool: Akamai
+    hosts:
+      - blzddist1-a.akamaihd.net
+      - downloader.battle.net
+    redirects:
+      - { from: us.cdn.blizzard.com, to: blzddist1-a.akamaihd.net }
+      - { from: eu.cdn.blizzard.com, to: blzddist1-a.akamaihd.net }
+      - { from: kr.cdn.blizzard.com, to: blzddist1-a.akamaihd.net }
+      - { from: level3.blizzard.com, to: blzddist1-a.akamaihd.net }
+      - { from: blizzard.gcdn.cloudn.co.kr, to: blzddist1-a.akamaihd.net }
+    blacklist:
+      - level3.ssl.blizzard.com

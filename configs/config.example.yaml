@@ -1,0 +1,74 @@
+# Xbox 主机加速器配置示例。
+# 容器首启会在数据卷 /data/config.yaml 生成一份默认配置；
+# 本文件仅供参考，绝大多数项可在 Web 界面里改，无需手工编辑。
+
+listen:
+  dns: ":53"      # DNS 服务（核心）
+  http: ":80"     # 302 重写层，仅 redirect.enabled=true 时占用
+  web: ":8080"    # 管理界面
+
+# 管理界面 HTTPS。需要把证书目录只读挂载到容器内，例如 /certs。
+web_tls:
+  enabled: false
+  addr: ":443"
+  cert_file: "/certs/fullchain.pem"
+  key_file: "/certs/privkey.pem"
+
+# 容器对外 IP，留空=自动探测（macvlan 下即容器自身 LAN IP）。
+# 被劫持域名的 A 记录会返回它。自动探测不准时手工填。
+advertise_ip: ""
+
+upstream:
+  dns:            # 非加速域名转发给这些上游
+    - "223.5.5.5:53"
+    - "119.29.29.29:53"
+
+ipv6_filter: true # 加速域名的 AAAA 返回空，逼游戏机走 IPv4 快 IP
+
+log_all_queries: false # 默认只记加速命中；开启会连普通转发查询也记入日志（较刷屏）
+
+data_dir: "/data"
+
+# 平台开关：enabled=是否加速，speedtest=是否参与周期测速，hidden=从界面隐藏(并强制不启用)。
+# 域名表内置全平台，这里只控制启停，永远不用改代码。
+platforms:
+  XboxGlobal: { enabled: true,  speedtest: true }
+  XboxCn1:    { enabled: true,  speedtest: true }
+  XboxCn2:    { enabled: true,  speedtest: true }
+  XboxApp:    { enabled: true,  speedtest: false }
+  Ps:         { enabled: false, speedtest: false }
+  Ns:         { enabled: false, speedtest: false }
+  Ea:         { enabled: false, speedtest: false }
+  Battle:     { enabled: false, speedtest: false }
+
+# 80 端口 302 重写层（默认关）。开启后容器才占用 80 端口。
+redirect:
+  enabled: false
+  smart_fallback: true   # 智能兜底：目标 CDN 缺该资源(404/403)时自动绕回原域名
+  rules:
+    - { from: assets1.xboxlive.com, to: assets1.xboxlive.cn, enabled: true }
+    - { from: assets2.xboxlive.com, to: assets2.xboxlive.cn, enabled: true }
+    - { from: dlassets.xboxlive.com, to: dlassets.xboxlive.cn, enabled: true }
+    - { from: dlassets2.xboxlive.com, to: dlassets2.xboxlive.cn, enabled: true }
+    - { from: assets1.xboxlive.cn, to: assets1.xboxlive.com, enabled: false }  # 反向：cn 慢时改走 com
+
+# 测速：先 ping 全表挑 top-N，再对 top-N 下载比带宽选最快。
+speedtest:
+  enabled: true
+  schedule: "0 */6 * * *"   # cron：每 6 小时一次全量重排
+  ping_top_n: 10
+  download_mb: 30
+  timeout_seconds: 10
+  freshness_minutes: 30     # 新鲜度窗口：窗口内的结果不重测
+  ewma: true                # 指数平滑，偏好长期稳定快的 IP
+
+# IP 列表在线同步（从上游 GitHub 拉，跟随作者更新）。
+ip_sync:
+  enabled: true
+  schedule: "0 4 * * *"     # cron：每天 4 点同步一次
+  proxies:                  # 按序尝试的代理前缀，""=直连 raw.githubusercontent
+    - "https://pxy1.skydevil.xyz/"
+    - "https://pxy2.skydevil.xyz/"
+    - "https://gh-proxy.com/"
+    - "https://ghproxy.net/"
+    - ""

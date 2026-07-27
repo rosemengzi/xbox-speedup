@@ -37,13 +37,12 @@
    sudo docker network create -d macvlan \
      --subnet=192.168.1.0/24 --gateway=192.168.1.1 -o parent=eth0 xbox_macvlan
    ```
-2. 创建本地部署配置并修改容器 IP、数据目录和证书目录：
+2. 创建部署配置并修改容器 IP、数据目录：
    ```bash
    cp .env.example .env
    ```
-   `.env` 只用于当前设备，已被 Git 忽略。群晖可将 `XBOX_DATA_DIR` 设置为
-   `/volume1/docker/xbox`；使用 HTTPS 时，将 `XBOX_CERT_DIR` 指向包含
-   `fullchain.pem` 和 `privkey.pem` 的证书目录。
+   需要启用前端 HTTPS 时，将 `fullchain.pem` 和 `privkey.pem` 放入
+   `XBOX_CERT_DIR` 指向的证书目录。
 3. 构建并启动：
    ```bash
    docker compose up -d --build

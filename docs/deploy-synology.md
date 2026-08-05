@@ -16,13 +16,15 @@ ip -o -4 addr     # 看 NAS 当前 IP 和网段
 2. **网段与网关**（如 `192.168.1.0/24`，网关 `192.168.1.1`）
 3. **给容器选一个空闲 IP**（如 `192.168.1.250`，必须在路由器 DHCP 分配范围之外，避免撞号）
 
-## 步骤一：把项目拷到 NAS
+## 步骤一：把部署配置放到 NAS
 
-用 File Station 或 scp，把整个项目目录放到例如 `/volume1/docker/xbox-speedup`。
+通过 Git 克隆仓库到例如 `/volume1/docker/xbox-speedup`：
 
 ```bash
-scp -r ./xbox-speedup admin@<NAS_IP>:/volume1/docker/xbox-speedup
+git clone https://github.com/ahaduoduoduo/xbox-speedup.git /volume1/docker/xbox-speedup
 ```
+
+运行时使用 GHCR 预构建镜像，NAS 不参与 Go 编译或 Docker 镜像构建。
 
 ## 步骤二：建 macvlan 网络（SSH，一次性）
 
@@ -57,14 +59,15 @@ XBOX_NETWORK=xbox_macvlan
 `XBOX_IP` 必须与创建 macvlan 时使用的网段一致。`XBOX_CERT_DIR` 中未提供证书也不影响默认的
 HTTP 管理界面，因为 HTTPS 默认关闭。
 
-## 步骤四：构建并启动
+## 步骤四：拉取镜像并启动
 
 ```bash
 cd /volume1/docker/xbox-speedup
-sudo docker compose up -d --build
+sudo docker compose pull
+sudo docker compose up -d
 ```
 
-首次构建会拉 Go 镜像编译，几分钟。完成后：
+Compose 从 `ghcr.io/ahaduoduoduo/xbox-speedup:latest` 拉取与 NAS 架构匹配的镜像。完成后：
 
 ```bash
 sudo docker logs -f xbox-speedup    # 应看到 “DNS 监听 :53 / Web 界面 …”
@@ -72,6 +75,15 @@ sudo docker logs -f xbox-speedup    # 应看到 “DNS 监听 :53 / Web 界面 �
 
 > DSM 7.2 也可用 Container Manager 图形界面：项目 → 新增 → 选这个目录的 docker-compose.yml。
 > 但 macvlan 网络仍建议用上面的 SSH 命令先建好。
+
+后续更新：
+
+```bash
+cd /volume1/docker/xbox-speedup
+git pull --ff-only
+sudo docker compose pull
+sudo docker compose up -d
+```
 
 ## 步骤五：设置 Xbox
 

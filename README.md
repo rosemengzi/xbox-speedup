@@ -23,6 +23,7 @@
 ## 技术栈
 
 - **Go 1.25**，单静态二进制，Alpine 镜像
+- **GitHub Actions + GHCR**，在 GitHub 构建并发布 amd64/arm64 镜像
 - [miekg/dns](https://github.com/miekg/dns) DNS 服务
 - [pro-bing](https://github.com/prometheus-community/pro-bing) ICMP 测速（不可用时退化 TCP 延迟）
 - [robfig/cron](https://github.com/robfig/cron) 周期调度
@@ -43,9 +44,10 @@
    ```
    需要启用前端 HTTPS 时，将 `fullchain.pem` 和 `privkey.pem` 放入
    `XBOX_CERT_DIR` 指向的证书目录。
-3. 构建并启动：
+3. 拉取 GitHub Container Registry 镜像并启动：
    ```bash
-   docker compose up -d --build
+   docker compose pull
+   docker compose up -d
    ```
 4. 用**另一台设备**浏览器打开 `http://<容器IP>:8080`（macvlan 下 NAS 本机通常无法直接访问容器），执行全量测速。
 5. Xbox 主 DNS 设为容器 IP，辅 DNS 留空；按实际网络情况决定是否关闭 IPv6。停止使用时把 DNS 改回自动获取。
@@ -78,6 +80,7 @@ web_tls:
 ## 文档
 
 - [docs/deploy-synology.md](docs/deploy-synology.md)：群晖 Docker 部署步骤
+- [docs/container-image.md](docs/container-image.md)：GitHub 镜像构建、标签与更新方式
 - [DETAILS.md](DETAILS.md)：目录结构与各模块职责
 - [TODO.md](TODO.md)：进度与后续计划
 - [docs/redirect.md](docs/redirect.md)：302 重写层与智能兜底原理

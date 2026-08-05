@@ -1,7 +1,7 @@
 services:
   xbox-speedup:
-    image: xbox-speedup:latest
-    build: .
+    image: ghcr.io/ahaduoduoduo/xbox-speedup:latest
+    pull_policy: always
     container_name: xbox-speedup
     restart: unless-stopped
     cap_add:

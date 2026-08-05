@@ -2,6 +2,8 @@
 
 ```
 xbox-speedup/
+├── .github/workflows/
+│   └── container.yml      GitHub Actions 多架构镜像构建与 GHCR 发布
 ├── cmd/xboxspeedup/
 │   ├── main.go            装配各模块、调度器(cron)、优雅退出
 │   └── seed.go            首启把镜像内置数据播种到数据卷
@@ -24,9 +26,10 @@ xbox-speedup/
 │   └── ip/*.txt           IP 列表快照(首启播种源，运行期由 ipsync 刷新)
 ├── configs/config.example.yaml  配置示例(带注释)
 ├── .env.example          本地部署变量示例；实际 .env 不提交
-├── Dockerfile             多阶段构建，Alpine 运行
-├── docker-compose.yml     群晖 macvlan 部署示例
+├── Dockerfile             GitHub Actions 使用的多阶段构建定义，Alpine 运行
+├── docker-compose.yml     从 GHCR 拉取镜像的群晖 macvlan 部署配置
 ├── docs/
+│   ├── container-image.md GitHub 镜像构建、标签与部署更新说明
 │   ├── deploy-synology.md 群晖部署与 HTTPS 配置
 │   └── redirect.md        302 重写层原理
 └── LICENSE                MIT 许可证
@@ -46,6 +49,8 @@ cron/手动 ─► ipsync   ─► 拉上游 IP 列表 ─► ipstore.SetList(di
 
 ## 关键设计
 
+- **镜像统一由 GitHub 构建**：`main` 分支和版本标签触发 GitHub Actions，镜像发布到 GHCR；
+  Compose 只拉取远程镜像，不包含本地构建配置。
 - **容器不碰下载流量**：DNS 把 CDN 真实 IP 直接给游戏机，几十 GB 直连。唯一例外是 302 智能兜底里
   「目标缺资源」时的回源反代，那是罕见分支。
 - **配置无锁热替换**：`config.Manager` 用读写锁持有快照，`Replace` 先落盘再换指针并触发回调，

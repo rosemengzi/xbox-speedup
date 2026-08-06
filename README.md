@@ -33,6 +33,10 @@
 
 完整步骤见 [docs/deploy-synology.md](docs/deploy-synology.md)。概要：
 
+> **构建约束**：部署主机（包括群晖 NAS）不执行本地 Docker 构建。所有镜像只能由 GitHub Actions
+> 构建并发布到 GHCR，部署时通过 `docker compose pull` 拉取；不要使用 `docker build` 或
+> `docker compose up --build`。
+
 1. SSH 建 macvlan 网络（一次性）：
    ```bash
    sudo docker network create -d macvlan \

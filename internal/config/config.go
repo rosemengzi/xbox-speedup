@@ -78,7 +78,6 @@ type SpeedTest struct {
 	DownloadMB       int    `yaml:"download_mb" json:"download_mb"`
 	TimeoutSeconds   int    `yaml:"timeout_seconds" json:"timeout_seconds"`
 	FreshnessMinutes int    `yaml:"freshness_minutes" json:"freshness_minutes"`
-	EWMA             bool   `yaml:"ewma" json:"ewma"`
 }
 
 // IPSync 是 IP 列表在线同步配置。
@@ -125,7 +124,6 @@ func Default() *Config {
 			DownloadMB:       30,
 			TimeoutSeconds:   10,
 			FreshnessMinutes: 30,
-			EWMA:             true,
 		},
 		IPSync: IPSync{
 			Enabled:  true,

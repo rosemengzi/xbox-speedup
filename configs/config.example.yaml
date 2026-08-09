@@ -59,8 +59,7 @@ speedtest:
   ping_top_n: 10
   download_mb: 30
   timeout_seconds: 10
-  freshness_minutes: 30     # 新鲜度窗口：窗口内的结果不重测
-  ewma: true                # 指数平滑，偏好长期稳定快的 IP
+  freshness_minutes: 30     # 新鲜度窗口：窗口内的当前候选成绩不重复测速
 
 # IP 列表在线同步（从上游 GitHub 拉，跟随作者更新）。
 ip_sync:

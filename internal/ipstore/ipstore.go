@@ -1,7 +1,7 @@
 // Package ipstore 持有各 IP 池的候选 IP 与测速记录，并维护“当前最快 IP”。
 //
-// 测速结果会过期，所以记录都带时间戳；选最快时只信新鲜记录，
-// 并支持 EWMA 平滑，避免单次偶然成绩主导决策。
+// 测速结果会过期，所以记录都带时间戳；选最快时比较当前候选的
+// 最近一次下载速度，避免历史平滑分数继续占用当前最快位置。
 package ipstore
 
 import (
@@ -16,7 +16,6 @@ type Record struct {
 	Location  string    `json:"location"`
 	RTTms     float64   `json:"rtt_ms"`     // 最近一次 ping 往返毫秒；<0 表示失败/未测
 	SpeedMBps float64   `json:"speed_mbps"` // 最近一次下载速度 MiB/s；<0 表示未测，0 表示测了但失败
-	Score     float64   `json:"score"`      // EWMA 平滑后的速度分
 	TestedAt  time.Time `json:"tested_at"`
 }
 
@@ -74,7 +73,7 @@ func (p *Pool) IPs() []string {
 	return out
 }
 
-// Records 返回记录快照（按速度分降序、其次 RTT 升序）。
+// Records 返回记录快照（按最近一次下载速度降序、其次 RTT 升序）。
 func (p *Pool) Records() []Record {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -85,8 +84,8 @@ func (p *Pool) Records() []Record {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
+		if out[i].SpeedMBps != out[j].SpeedMBps {
+			return out[i].SpeedMBps > out[j].SpeedMBps
 		}
 		ri, rj := out[i].RTTms, out[j].RTTms
 		if ri < 0 {
@@ -130,8 +129,8 @@ func (p *Pool) UpdatePing(ip string, rtt float64) {
 	}
 }
 
-// UpdateSpeed 写入一次下载测速结果，并按需做 EWMA 平滑。
-func (p *Pool) UpdateSpeed(ip string, speed float64, ewma bool) {
+// UpdateSpeed 写入最近一次下载测速结果。
+func (p *Pool) UpdateSpeed(ip string, speed float64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	r, ok := p.records[ip]
@@ -140,30 +139,57 @@ func (p *Pool) UpdateSpeed(ip string, speed float64, ewma bool) {
 	}
 	r.SpeedMBps = speed
 	r.TestedAt = time.Now()
-	if ewma && r.Score > 0 {
-		const alpha = 0.5
-		r.Score = alpha*speed + (1-alpha)*r.Score
-	} else {
-		r.Score = speed
+}
+
+// RetainSpeeds 只保留本轮候选 IP 的下载成绩。
+// 全量测速的延迟排名变化后，未进入 top-N 的旧成绩不得继续参与选择或显示。
+func (p *Pool) RetainSpeeds(ips []string) {
+	keep := make(map[string]struct{}, len(ips))
+	for _, ip := range ips {
+		keep[ip] = struct{}{}
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for ip, r := range p.records {
+		if _, ok := keep[ip]; ok {
+			continue
+		}
+		r.SpeedMBps = -1
+		r.TestedAt = time.Time{}
 	}
 }
 
-// ComputeBest 依据记录重新选出最快 IP：优先速度分，无下载数据时退化到 RTT。
+// ComputeBest 依据记录重新选出最快 IP：优先选择最近一次下载速度最高者，
+// 没有有效下载成绩时退化到 RTT 最低者。
 func (p *Pool) ComputeBest() string {
 	recs := p.Records()
 	if len(recs) == 0 {
 		return ""
 	}
-	// Records 已排序，取第一个有有效成绩者。
+	best := ""
+	// Records 已按下载速度排序，取第一个成功的下载成绩。
 	for _, r := range recs {
-		if r.Score > 0 || r.RTTms >= 0 {
-			p.mu.Lock()
-			p.best = r.IP
-			p.mu.Unlock()
-			return r.IP
+		if r.SpeedMBps > 0 {
+			best = r.IP
+			break
 		}
 	}
-	return ""
+	// 没有成功的下载结果时，按 RTT 兜底。
+	if best == "" {
+		bestRTT := float64(1 << 62)
+		for _, r := range recs {
+			if r.RTTms >= 0 && r.RTTms < bestRTT {
+				best = r.IP
+				bestRTT = r.RTTms
+			}
+		}
+	}
+
+	p.mu.Lock()
+	p.best = best
+	p.mu.Unlock()
+	return best
 }
 
 // SetBest 手动锁定最快 IP。

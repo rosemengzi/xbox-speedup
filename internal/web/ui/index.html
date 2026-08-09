@@ -288,7 +288,7 @@ async function openPool(name){
   document.getElementById('modalBody').innerHTML='<div class="muted" style="padding:20px">加载中...</div>';
   const d=await api('/api/pool?name='+encodeURIComponent(name));
   const rows=(d.records||[]).map(r=>`<tr${r.ip===d.best?' class="best"':''}><td>${esc(r.ip)}${r.ip===d.best?' *':''}</td><td>${esc(r.location)}</td><td class="num">${fmtRtt(r.rtt_ms)}</td><td class="num">${fmtSpd(r.speed_mbps)}</td></tr>`).join('');
-  document.getElementById('modalBody').innerHTML=`<div class="tableWrap" style="display:block"><table><thead><tr><th>IP</th><th>位置</th><th>延迟</th><th>带宽</th></tr></thead><tbody>${rows}</tbody></table></div>`+`<div class="muted small" style="padding:10px 14px;border-top:1px solid var(--line)">全部 IP 都会 ping；带宽仅测延迟最低的前 N 个。-- 表示仅 ping、未测带宽，失败表示下载测速失败。</div>`;
+  document.getElementById('modalBody').innerHTML=`<div class="tableWrap" style="display:block"><table><thead><tr><th>IP</th><th>位置</th><th>延迟</th><th>带宽</th></tr></thead><tbody>${rows}</tbody></table></div>`+`<div class="muted small" style="padding:10px 14px;border-top:1px solid var(--line)">全部 IP 都会 ping；带宽仅测本轮延迟最低的前 N 个，并按当前有效带宽排序。-- 表示本轮未测带宽，失败表示下载测速失败。</div>`;
 }
 function closeModal(){ document.getElementById('modal').classList.remove('show'); }
 async function speedtest(pool){ await api('/api/speedtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pool})}); flash('已触发测速：'+(pool||'全部')); setTimeout(refresh,600); }

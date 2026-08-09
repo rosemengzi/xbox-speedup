@@ -163,6 +163,13 @@ func (e *Engine) testPool(ctx context.Context, poolName string, candidates []str
 	freshness := time.Duration(cfg.FreshnessMinutes) * time.Minute
 	dlBytes := int64(cfg.DownloadMB) * 1024 * 1024
 	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
+	if fullRun {
+		topIPs := make([]string, 0, len(results))
+		for _, r := range results {
+			topIPs = append(topIPs, r.ip)
+		}
+		pool.RetainSpeeds(topIPs)
+	}
 
 	var dwg sync.WaitGroup
 	dsem := make(chan struct{}, 8)
@@ -176,7 +183,7 @@ func (e *Engine) testPool(ctx context.Context, poolName string, candidates []str
 			defer dwg.Done()
 			defer func() { <-dsem }()
 			speed := e.downloadSpeed(ctx, ip, testURL, dlBytes, timeout)
-			pool.UpdateSpeed(ip, speed, cfg.EWMA)
+			pool.UpdateSpeed(ip, speed)
 		}(r.ip)
 	}
 	dwg.Wait()

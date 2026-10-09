@@ -10,7 +10,7 @@ listen:
 # 管理界面 HTTPS。需要把证书目录只读挂载到容器内，例如 /certs。
 web_tls:
   enabled: false
-  addr: ":443"
+  addr: ":8443"   # 管理 HTTPS，与下载 TLS :443 分开
   cert_file: "/certs/fullchain.pem"
   key_file: "/certs/privkey.pem"
 
@@ -44,7 +44,8 @@ platforms:
 # 80 端口 302 重写层（默认关）。开启后容器才占用 80 端口。
 redirect:
   enabled: false
-  smart_fallback: true   # 智能兜底：目标 CDN 缺该资源(404/403)时自动绕回原域名
+  tls_addr: ":443"       # 原域名 HTTPS 透传，随重写层启停；需要客户端 SNI
+  smart_fallback: true   # 资源缺失或探测失败时回源；只缓存明确的存在/不存在
   rules:
     - { from: assets1.xboxlive.com, to: assets1.xboxlive.cn, enabled: true }
     - { from: assets2.xboxlive.com, to: assets2.xboxlive.cn, enabled: true }
@@ -52,7 +53,7 @@ redirect:
     - { from: dlassets2.xboxlive.com, to: dlassets2.xboxlive.cn, enabled: true }
     - { from: assets1.xboxlive.cn, to: assets1.xboxlive.com, enabled: false }  # 反向：cn 慢时改走 com
 
-# 测速：先 ping 全表挑 top-N，再对 top-N 下载比带宽选最快。
+# 测速：先 ping 全表挑 top-N，再逐个下载比较，避免样本抢占同一出口带宽。
 speedtest:
   enabled: true
   schedule: "0 */6 * * *"   # cron：每 6 小时一次全量重排

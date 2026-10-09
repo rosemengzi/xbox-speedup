@@ -16,21 +16,26 @@ type schedHolder struct {
 }
 
 // rebuild 按当前配置重建调度任务（先停旧的再起新的）。
-func (h *schedHolder) rebuild(c *config.Config, speedTest, syncIP func()) {
+func (h *schedHolder) rebuild(c *config.Config, speedTest, syncIP func()) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	cr := cron.New()
+	if c.SpeedTest.Enabled && c.SpeedTest.Schedule != "" {
+		if _, err := cr.AddFunc(c.SpeedTest.Schedule, speedTest); err != nil {
+			return err
+		}
+	}
+	if c.IPSync.Enabled && c.IPSync.Schedule != "" {
+		if _, err := cr.AddFunc(c.IPSync.Schedule, syncIP); err != nil {
+			return err
+		}
+	}
 	if h.cron != nil {
 		h.cron.Stop()
 	}
-	cr := cron.New()
-	if c.SpeedTest.Enabled && c.SpeedTest.Schedule != "" {
-		_, _ = cr.AddFunc(c.SpeedTest.Schedule, speedTest)
-	}
-	if c.IPSync.Enabled && c.IPSync.Schedule != "" {
-		_, _ = cr.AddFunc(c.IPSync.Schedule, syncIP)
-	}
 	cr.Start()
 	h.cron = cr
+	return nil
 }
 
 // stop 停止调度器。

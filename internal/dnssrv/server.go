@@ -4,6 +4,7 @@
 package dnssrv
 
 import (
+	"context"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"xboxspeedup/internal/config"
 	"xboxspeedup/internal/ipstore"
 	"xboxspeedup/internal/logstore"
+	"xboxspeedup/internal/netutil"
 	"xboxspeedup/internal/rules"
 )
 
@@ -27,8 +29,10 @@ type Server struct {
 	logs        *logstore.Store
 	advertiseIP string
 
-	idx      atomic.Pointer[index]
-	upClient *dns.Client
+	idx           atomic.Pointer[index]
+	redirectReady atomic.Bool
+	redirectCheck func() bool
+	running       atomic.Bool
 
 	udp *dns.Server
 	tcp *dns.Server
@@ -46,14 +50,16 @@ type index struct {
 }
 
 // New 创建 DNS 服务器。advertiseIP 为容器对外 IP（被劫持域名的 A 记录）。
-func New(cfg *config.Manager, table *rules.Table, store *ipstore.Store, logs *logstore.Store, advertiseIP string) *Server {
+func New(cfg *config.Manager, table *rules.Table, store *ipstore.Store, logs *logstore.Store, advertiseIP string, ready ...func() bool) *Server {
 	s := &Server{
 		cfg:         cfg,
 		table:       table,
 		store:       store,
 		logs:        logs,
 		advertiseIP: advertiseIP,
-		upClient:    &dns.Client{Timeout: 5 * time.Second},
+	}
+	if len(ready) > 0 {
+		s.redirectCheck = ready[0]
 	}
 	s.Reload(cfg.Get())
 	return s
@@ -72,7 +78,7 @@ func (s *Server) Reload(c *config.Config) {
 	}
 	for name, p := range s.table.Platforms {
 		tg, ok := c.Platforms[name]
-		if !ok || !tg.Enabled {
+		if !ok || !tg.Enabled || tg.Hidden {
 			continue
 		}
 		for _, h := range p.Hosts {
@@ -88,18 +94,8 @@ func (s *Server) Reload(c *config.Config) {
 		}
 	}
 	if c.Redirect.Enabled && s.advertiseIP != "" {
-		for _, r := range c.Redirect.Rules {
-			if r.Enabled {
-				idx.hijack[strings.ToLower(r.From)] = true
-			}
-		}
-		for name, p := range s.table.Platforms {
-			if tg, ok := c.Platforms[name]; !ok || !tg.Enabled {
-				continue
-			}
-			for _, r := range p.Redirects {
-				idx.hijack[strings.ToLower(r.From)] = true
-			}
+		for from := range s.table.EffectiveRedirects(c) {
+			idx.hijack[from] = true
 		}
 	}
 	s.idx.Store(idx)
@@ -112,20 +108,54 @@ func (s *Server) Start() error {
 	s.udp = &dns.Server{Addr: addr, Net: "udp", Handler: handler}
 	s.tcp = &dns.Server{Addr: addr, Net: "tcp", Handler: handler}
 
-	errCh := make(chan error, 2)
-	go func() { errCh <- s.udp.ListenAndServe() }()
-	go func() { errCh <- s.tcp.ListenAndServe() }()
-	// 给监听一点启动时间，及时暴露端口占用等错误。
-	select {
-	case err := <-errCh:
+	// Bind both transports synchronously; readiness is not a timed guess.
+	packet, err := net.ListenPacket("udp", addr)
+	if err != nil {
 		return err
-	case <-time.After(300 * time.Millisecond):
-		return nil
 	}
+	listener, err := net.Listen("tcp", packet.LocalAddr().String())
+	if err != nil {
+		packet.Close()
+		return err
+	}
+	s.udp.PacketConn = packet
+	s.tcp.Listener = listener
+	started := make(chan struct{}, 2)
+	errCh := make(chan error, 2)
+	s.udp.NotifyStartedFunc = func() { started <- struct{}{} }
+	s.tcp.NotifyStartedFunc = func() { started <- struct{}{} }
+	s.running.Store(true)
+	go func() { errCh <- s.udp.ActivateAndServe(); s.running.Store(false) }()
+	go func() { errCh <- s.tcp.ActivateAndServe(); s.running.Store(false) }()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case err := <-errCh:
+			packet.Close()
+			listener.Close()
+			s.running.Store(false)
+			return err
+		}
+	}
+	return nil
 }
+
+// SetRedirectReady prevents DNS hijacking before both download listeners exist.
+func (s *Server) SetRedirectReady(ready bool) { s.redirectReady.Store(ready) }
+
+func (s *Server) canRedirect() bool {
+	if s.redirectCheck != nil {
+		return s.redirectCheck()
+	}
+	return s.redirectReady.Load()
+}
+
+func (s *Server) Running() bool { return s.running.Load() }
 
 // Shutdown 停止 DNS 服务。
 func (s *Server) Shutdown() {
+	s.running.Store(false)
+	s.redirectReady.Store(false)
 	if s.udp != nil {
 		_ = s.udp.Shutdown()
 	}
@@ -160,7 +190,7 @@ func (s *Server) handleA(w dns.ResponseWriter, r *dns.Msg, idx *index, name, cli
 		s.logs.Log(logstore.KindBlock, name, client, "0.0.0.0")
 		return
 	}
-	if idx.hijack[name] {
+	if idx.hijack[name] && s.canRedirect() {
 		s.writeA(w, r, s.advertiseIP)
 		s.logs.Log(logstore.KindRedirect, name, client, "劫持到本机 "+s.advertiseIP)
 		return
@@ -182,9 +212,9 @@ func (s *Server) handleA(w dns.ResponseWriter, r *dns.Msg, idx *index, name, cli
 }
 
 func (s *Server) handleAAAA(w dns.ResponseWriter, r *dns.Msg, idx *index, name, client string) {
-	managed := idx.blacklist[name] || idx.hijack[name]
-	if _, ok := idx.accelPlatform[name]; ok {
-		managed = true
+	managed := idx.blacklist[name] || (idx.hijack[name] && s.canRedirect())
+	if platform, ok := idx.accelPlatform[name]; ok {
+		managed = managed || idx.pinned[platform] != "" || s.store.BestForPool(idx.hostPool[name]) != ""
 	}
 	if managed && idx.ipv6Filter {
 		m := new(dns.Msg)
@@ -226,13 +256,12 @@ func (s *Server) forwardMaybeLog(w dns.ResponseWriter, r *dns.Msg, idx *index, n
 
 // forward 把查询转发给上游 DNS，返回首个成功应答。
 func (s *Server) forward(w dns.ResponseWriter, r *dns.Msg) {
-	ups := s.cfg.Get().Upstream.DNS
-	for _, up := range ups {
-		resp, _, err := s.upClient.Exchange(r, up)
-		if err == nil && resp != nil {
-			_ = w.WriteMsg(resp)
-			return
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	resp, err := netutil.ExchangeDNS(ctx, r, s.cfg.Get().Upstream.DNS)
+	if err == nil {
+		_ = w.WriteMsg(resp)
+		return
 	}
 	m := new(dns.Msg)
 	m.SetReply(r)

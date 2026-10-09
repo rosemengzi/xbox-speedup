@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// decisionCache 缓存“目标域名是否缺某资源”的探测结论，按 ContentID 目录粒度。
-// 同一游戏只探一次，避免每个分块请求都触发探测。
+// decisionCache stores verified decisions for an exact URI, node and rule version.
 type decisionCache struct {
 	mu  sync.Mutex
 	ttl time.Duration

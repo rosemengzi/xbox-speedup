@@ -3,7 +3,7 @@
 项目镜像由 GitHub Actions 构建并发布到 GitHub Container Registry（GHCR）：
 
 ```text
-ghcr.io/ahaduoduoduo/xbox-speedup
+ghcr.io/rosemengzi/xbox-speedup
 ```
 
 Compose 文件不包含 `build` 字段，部署主机只负责拉取和运行镜像，不安装 Go 工具链，也不执行本地 Docker 构建。
@@ -30,7 +30,7 @@ Compose 文件不包含 `build` 字段，部署主机只负责拉取和运行镜
 默认部署使用：
 
 ```yaml
-image: ghcr.io/ahaduoduoduo/xbox-speedup:latest
+image: ghcr.io/rosemengzi/xbox-speedup:latest
 pull_policy: always
 ```
 

@@ -21,7 +21,7 @@ ip -o -4 addr     # 看 NAS 当前 IP 和网段
 通过 Git 克隆仓库到例如 `/volume1/docker/xbox-speedup`：
 
 ```bash
-git clone https://github.com/ahaduoduoduo/xbox-speedup.git /volume1/docker/xbox-speedup
+git clone https://github.com/rosemengzi/xbox-speedup.git /volume1/docker/xbox-speedup
 ```
 
 运行时使用 GHCR 预构建镜像，NAS 不参与 Go 编译或 Docker 镜像构建。
@@ -67,7 +67,7 @@ sudo docker compose pull
 sudo docker compose up -d
 ```
 
-Compose 从 `ghcr.io/ahaduoduoduo/xbox-speedup:latest` 拉取与 NAS 架构匹配的镜像。完成后：
+Compose 从 `ghcr.io/rosemengzi/xbox-speedup:latest` 拉取与 NAS 架构匹配的镜像。完成后：
 
 ```bash
 sudo docker logs -f xbox-speedup    # 应看到 “DNS 监听 :53 / Web 界面 …”
@@ -108,7 +108,7 @@ Web 界面的「实时连接日志」里，Xbox 下载时会滚出 `DNS-A` 记�
   Web 界面要用**另一台设备**（电脑/手机）打开。Xbox 是独立设备，不受影响。
 - **53 端口冲突？** 不会。容器有独立 IP，53/80/8080 都绑在容器自己的 IP 上，和群晖 DSM（即便装了
   DNS Server 套件）互不干扰。
-- **302 重写层默认关**。需要时在 Web 界面打开「重写层」开关，**然后重启容器**（`docker compose restart`）让它占用 80 端口。日常纯 DNS 就够。
+- **302 重写层默认关**。需要时在 Web 界面打开「重写层」开关，HTTP :80 与下载 TLS :443 自动启停；修改监听地址或管理证书时才需要重启。管理 HTTPS 使用 :8443。
 - **ICMP 测速**：compose 已加 `NET_RAW`。若你的环境不允许，测速会自动退化为 TCP 连接延迟，仍能选最快。
 - **IP 列表/配置持久化**在 `XBOX_DATA_DIR` 指定的目录中（容器内为 `/data`）。删除容器不会删除该目录。
 - **关闭加速**：把 Xbox DNS 改回自动获取即可；容器可继续留着。
@@ -121,10 +121,10 @@ Web 界面的「实时连接日志」里，Xbox 下载时会滚出 `DNS-A` 记�
 ```yaml
 web_tls:
   enabled: true
-  addr: ":443"
+  addr: ":8443"
   cert_file: "/certs/fullchain.pem"
   key_file: "/certs/privkey.pem"
 ```
 
-重启容器后，可通过 `https://<证书覆盖的域名>` 访问。域名需要在局域网 DNS 或路由器 Host
+重启容器后，可通过 `https://<证书覆盖的域名>:8443` 访问。域名需要在局域网 DNS 或路由器 Host
 记录中解析到 `XBOX_IP`。证书续期后需重启容器，使服务重新加载证书。

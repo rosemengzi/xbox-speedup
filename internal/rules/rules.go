@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"xboxspeedup/internal/config"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -77,6 +79,8 @@ func (t *Table) buildIndex() {
 			t.blacklist[strings.ToLower(strings.TrimSpace(b))] = name
 		}
 		for _, r := range p.Redirects {
+			// 内置重写源也属于该平台，供开关、TLS 与回源查找使用。
+			t.hostToInfo[strings.ToLower(strings.TrimSpace(r.From))] = HostInfo{Platform: name, Pool: p.Pool}
 			t.builtinRedir = append(t.builtinRedir, RedirectPair{
 				From: strings.ToLower(strings.TrimSpace(r.From)),
 				To:   strings.ToLower(strings.TrimSpace(r.To)),
@@ -85,9 +89,65 @@ func (t *Table) buildIndex() {
 	}
 }
 
+// EffectiveRedirects is shared by DNS and HTTP so disabled platforms cannot be
+// re-enabled through global rules. User rules override built-in rules.
+func (t *Table) EffectiveRedirects(c *config.Config) map[string]string {
+	out := make(map[string]string)
+	if !c.Redirect.Enabled {
+		return out
+	}
+	allowed := func(host string) bool {
+		platform := t.PlatformOf(host)
+		if platform == "" {
+			return true
+		}
+		toggle := c.Platforms[platform]
+		return toggle.Enabled && !toggle.Hidden
+	}
+	for name, platform := range t.Platforms {
+		toggle := c.Platforms[name]
+		if !toggle.Enabled || toggle.Hidden {
+			continue
+		}
+		for _, r := range platform.Redirects {
+			from, to := strings.ToLower(strings.TrimSpace(r.From)), strings.ToLower(strings.TrimSpace(r.To))
+			if allowed(from) && allowed(to) {
+				out[from] = to
+			}
+		}
+	}
+	for _, r := range c.Redirect.Rules {
+		if !r.Enabled {
+			delete(out, r.From)
+		} else if allowed(r.From) && allowed(r.To) {
+			out[r.From] = r.To
+		}
+	}
+	return out
+}
+
+// ValidateConfig catches cycles including built-in redirects before applying.
+func (t *Table) ValidateConfig(c *config.Config) error {
+	return config.ValidateRedirectGraph(t.EffectiveRedirects(c))
+}
+
 // HostInfo 返回某加速域名的平台/池归属。
 func (t *Table) HostInfo(host string) (HostInfo, bool) {
 	info, ok := t.hostToInfo[strings.ToLower(host)]
+	if !ok && t.hostToInfo == nil {
+		for name, p := range t.Platforms {
+			for _, h := range p.Hosts {
+				if strings.EqualFold(h, host) {
+					return HostInfo{Platform: name, Pool: p.Pool}, true
+				}
+			}
+			for _, r := range p.Redirects {
+				if strings.EqualFold(r.From, host) {
+					return HostInfo{Platform: name, Pool: p.Pool}, true
+				}
+			}
+		}
+	}
 	return info, ok
 }
 
@@ -113,7 +173,7 @@ func (t *Table) BuiltinRedirects() []RedirectPair {
 // PlatformOf 返回域名所属平台名（加速域名或黑名单域名）。
 func (t *Table) PlatformOf(host string) string {
 	host = strings.ToLower(host)
-	if info, ok := t.hostToInfo[host]; ok {
+	if info, ok := t.HostInfo(host); ok {
 		return info.Platform
 	}
 	if p, ok := t.blacklist[host]; ok {

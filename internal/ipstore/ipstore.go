@@ -5,6 +5,7 @@
 package ipstore
 
 import (
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -30,7 +31,7 @@ type Pool struct {
 	mu      sync.RWMutex
 	name    string
 	records map[string]*Record
-	order   []string // 维持列表内顺序，供未测速时的稳定 fallback
+	order   []string // 维持列表内顺序；未经验证的候选不能用于 DNS 应答。
 	best    string
 }
 
@@ -47,6 +48,14 @@ func (p *Pool) SetList(entries []IPEntry) []string {
 	order := make([]string, 0, len(entries))
 	var added []string
 	for _, e := range entries {
+		parsed := net.ParseIP(e.IP)
+		if parsed == nil || parsed.To4() == nil || parsed.IsUnspecified() || parsed.IsMulticast() {
+			continue
+		}
+		e.IP = parsed.To4().String()
+		if _, exists := next[e.IP]; exists {
+			continue
+		}
 		order = append(order, e.IP)
 		if old, ok := p.records[e.IP]; ok {
 			old.Location = e.Location
@@ -114,7 +123,7 @@ func (p *Pool) Fresh(ip string, window time.Duration) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	r, ok := p.records[ip]
-	if !ok || r.SpeedMBps < 0 || r.TestedAt.IsZero() {
+	if !ok || r.SpeedMBps <= 0 || r.TestedAt.IsZero() {
 		return false
 	}
 	return time.Since(r.TestedAt) < window
@@ -139,6 +148,9 @@ func (p *Pool) UpdateSpeed(ip string, speed float64) {
 	}
 	r.SpeedMBps = speed
 	r.TestedAt = time.Now()
+	if speed <= 0 && p.best == ip {
+		p.best = ""
+	}
 }
 
 // RetainSpeeds 只保留本轮候选 IP 的下载成绩。
@@ -157,39 +169,40 @@ func (p *Pool) RetainSpeeds(ips []string) {
 		}
 		r.SpeedMBps = -1
 		r.TestedAt = time.Time{}
+		if p.best == ip {
+			p.best = ""
+		}
 	}
 }
 
-// ComputeBest 依据记录重新选出最快 IP：优先选择最近一次下载速度最高者，
-// 没有有效下载成绩时退化到 RTT 最低者。
+// ComputeBest 只选择下载验证成功的 IP。全部失败时返回空，由 DNS 转发上游。
 func (p *Pool) ComputeBest() string {
-	recs := p.Records()
-	if len(recs) == 0 {
-		return ""
-	}
-	best := ""
-	// Records 已按下载速度排序，取第一个成功的下载成绩。
-	for _, r := range recs {
-		if r.SpeedMBps > 0 {
-			best = r.IP
-			break
-		}
-	}
-	// 没有成功的下载结果时，按 RTT 兜底。
-	if best == "" {
-		bestRTT := float64(1 << 62)
-		for _, r := range recs {
-			if r.RTTms >= 0 && r.RTTms < bestRTT {
-				best = r.IP
-				bestRTT = r.RTTms
-			}
-		}
-	}
-
 	p.mu.Lock()
-	p.best = best
-	p.mu.Unlock()
-	return best
+	defer p.mu.Unlock()
+	p.best = ""
+	var bestSpeed float64
+	for _, ip := range p.order {
+		r := p.records[ip]
+		if r.SpeedMBps > bestSpeed {
+			p.best, bestSpeed = ip, r.SpeedMBps
+		}
+	}
+	return p.best
+}
+
+// ComputeBestByLatency 用于没有下载测试 URL 的池，不能替代下载池的验证。
+func (p *Pool) ComputeBestByLatency() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.best = ""
+	bestRTT := float64(1 << 62)
+	for _, ip := range p.order {
+		r := p.records[ip]
+		if r.RTTms >= 0 && r.RTTms < bestRTT {
+			p.best, bestRTT = ip, r.RTTms
+		}
+	}
+	return p.best
 }
 
 // SetBest 手动锁定最快 IP。
@@ -199,17 +212,11 @@ func (p *Pool) SetBest(ip string) {
 	p.mu.Unlock()
 }
 
-// Best 返回当前最快 IP，未选出时退化到列表首个 IP。
+// Best 返回已选出的 IP；启动未测速或全部失败时返回空。
 func (p *Pool) Best() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	if p.best != "" {
-		return p.best
-	}
-	if len(p.order) > 0 {
-		return p.order[0]
-	}
-	return ""
+	return p.best
 }
 
 // Store 管理全部池。

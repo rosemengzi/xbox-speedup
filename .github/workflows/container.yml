@@ -31,7 +31,10 @@ jobs:
           cache: true
 
       - name: Run tests
-        run: go test ./...
+        run: go test -race ./...
+
+      - name: Static analysis
+        run: go vet ./...
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4

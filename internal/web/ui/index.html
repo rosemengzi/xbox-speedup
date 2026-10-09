@@ -112,7 +112,7 @@
         <h2>平台加速 <span class="muted small" id="platformSummary"></span></h2>
         <div class="tableWrap">
           <table id="platTable">
-            <thead><tr><th>平台</th><th>启用</th><th>测速</th><th>IP 池</th><th>当前最快 IP</th><th>延迟</th><th>带宽</th><th>IP 数</th><th></th></tr></thead>
+            <thead><tr><th>平台</th><th>启用</th><th>测速</th><th>IP 池</th><th>当前节点 IP</th><th>延迟</th><th>带宽</th><th>IP 数</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -139,7 +139,7 @@
       <div class="logs" id="logs"></div>
     </div>
   </section>
-  <footer>DNS 指向本机即生效 · 修改开关即时保存 · 重写层启用后需重启容器以占用 80 端口</footer>
+  <footer>修改开关即时保存 · 重写层自动启停 HTTP 与下载 TLS · 修改监听端口或证书需重启容器</footer>
 </main>
 
 <div id="modal" class="modal" onclick="if(event.target===this)closeModal()">
@@ -151,6 +151,8 @@
 
 <script>
 let cfg = null;
+let pendingSaves = 0;
+let saveChain = Promise.resolve();
 
 async function api(path, opts){ const r = await fetch(path, opts); if(!r.ok) throw new Error(await r.text()); return r.json(); }
 function fmtRtt(v){ return v==null||v<0 ? '--' : v.toFixed(0)+' ms'; }
@@ -160,8 +162,10 @@ function attr(s){ return esc(s).replace(/'/g,'&#39;'); }
 function isReverseRule(r){ return /\.cn$/i.test(r.from||'') && /\.com$/i.test(r.to||''); }
 
 async function refresh(){
-  const st = await api('/api/status');
-  cfg = await api('/api/config');
+  if(pendingSaves) return;
+  const [st, nextCfg] = await Promise.all([api('/api/status'), api('/api/config')]);
+  if(pendingSaves) return;
+  cfg = nextCfg;
   const ip = st.advertise_ip || '本机 IP';
   document.getElementById('dnsTarget').textContent = ip;
   document.getElementById('advtip').textContent = st.advertise_ip ? '把 Xbox / 主机的首选 DNS 设置为这个地址' : '未探测到本机地址，请按部署环境填写容器 IP';
@@ -171,6 +175,7 @@ async function refresh(){
   document.getElementById('redEnabled').checked = st.redirect_enabled;
   document.getElementById('redSmart').checked = st.smart_fallback;
   document.getElementById('busy').innerHTML = st.speedtest_running ? '<span class="spin"></span>测速进行中...' : '';
+  if(st.restart_required) document.getElementById('busy').textContent += ' 监听配置已保存，重启容器后生效';
 
   const visible = (st.platforms||[]).filter(p=>!p.hidden);
   const enabled = visible.filter(p=>p.enabled).length;
@@ -196,9 +201,9 @@ function renderPlatformTable(platforms){
     <td><label class="sw"><input type="checkbox" ${p.enabled?'checked':''} onchange="togglePlatform('${attr(p.key)}','enabled',this.checked)"><span></span></label></td>
     <td><label class="sw"><input type="checkbox" ${p.speedtest?'checked':''} onchange="togglePlatform('${attr(p.key)}','speedtest',this.checked)"><span></span></label></td>
     <td><span class="tag">${esc(p.pool)}</span></td>
-    <td class="best">${esc(p.best_ip)||'--'}<div class="muted small">${esc(p.best_loc)}</div></td>
+    <td class="best">${esc(p.best_ip)||(p.enabled?'上游解析':'已停用')}<div class="muted small">${p.pinned?'手动锁定 · 自动推荐 '+esc(p.auto_ip||'暂无'):esc(p.best_loc)}</div></td>
     <td class="num">${fmtRtt(p.best_rtt)}</td><td class="num">${fmtSpd(p.best_speed)}</td><td class="num">${p.ip_count||0}</td>
-    <td><div class="actions"><button class="ghost slim" onclick="speedtest('${attr(p.pool)}')">测速</button><button class="ghost slim" onclick="openPool('${attr(p.pool)}')">详情</button><button class="ghost slim" onclick="hidePlat('${attr(p.key)}')">隐藏</button></div></td>
+    <td><div class="actions"><button class="ghost slim" onclick="speedtest('${attr(p.pool)}')">测速</button><button class="ghost slim" onclick="pinPlatform('${attr(p.key)}')">锁定 IP</button><button class="ghost slim" onclick="openPool('${attr(p.pool)}')">详情</button><button class="ghost slim" onclick="hidePlat('${attr(p.key)}')">隐藏</button></div></td>
   </tr>`).join('');
 }
 
@@ -207,7 +212,7 @@ function renderPlatformCards(platforms){
   el.innerHTML = platforms.map(p=>`<article class="platCard">
     <div class="platHead"><div><div class="platformName">${esc(p.key)}</div><div class="platDesc">${esc(p.description)}</div></div><span class="tag">${esc(p.pool)}</span></div>
     <div class="platStats">
-      <div class="stat"><div class="label">最快 IP</div><div class="value best">${esc(p.best_ip)||'--'}</div></div>
+      <div class="stat"><div class="label">${p.pinned?'手动锁定 IP':'当前节点 IP'}</div><div class="value best">${esc(p.best_ip)||(p.enabled?'上游解析':'已停用')}</div></div>
       <div class="stat"><div class="label">地区</div><div class="value">${esc(p.best_loc)||'--'}</div></div>
       <div class="stat"><div class="label">延迟</div><div class="value">${fmtRtt(p.best_rtt)}</div></div>
       <div class="stat"><div class="label">带宽 / IP</div><div class="value">${fmtSpd(p.best_speed)} · ${p.ip_count||0}</div></div>
@@ -215,7 +220,7 @@ function renderPlatformCards(platforms){
     <div class="platFoot">
       <span class="toggleLine">启用 <label class="sw"><input type="checkbox" ${p.enabled?'checked':''} onchange="togglePlatform('${attr(p.key)}','enabled',this.checked)"><span></span></label></span>
       <span class="toggleLine">测速 <label class="sw"><input type="checkbox" ${p.speedtest?'checked':''} onchange="togglePlatform('${attr(p.key)}','speedtest',this.checked)"><span></span></label></span>
-      <div class="platActions"><button class="ghost slim" onclick="speedtest('${attr(p.pool)}')">测速</button><button class="ghost slim" onclick="openPool('${attr(p.pool)}')">详情</button><button class="ghost slim" onclick="hidePlat('${attr(p.key)}')">隐藏</button></div>
+      <div class="platActions"><button class="ghost slim" onclick="speedtest('${attr(p.pool)}')">测速</button><button class="ghost slim" onclick="pinPlatform('${attr(p.key)}')">锁定 IP</button><button class="ghost slim" onclick="openPool('${attr(p.pool)}')">详情</button><button class="ghost slim" onclick="hidePlat('${attr(p.key)}')">隐藏</button></div>
     </div>
   </article>`).join('');
 }
@@ -262,7 +267,7 @@ function openRedirectHelp(){
   document.getElementById('modalTitle').textContent = '302 重写层说明';
   document.getElementById('modalBody').innerHTML = `<div class="help">
     <h3>什么时候开启</h3>
-    <p>302 重写层用于把 Xbox 下载域名在不同 CDN 域名之间重定向。它只参与 HTTP 下载链接跳转，不承载几十 GB 的下载流量。</p>
+    <p>HTTP 请求可通过 302 换到目标 CDN；目标资源缺失或探测失败时由容器回源转发。HTTPS 请求保持原域名和 CDN 证书，经容器透传，容器会承担这部分下载流量。</p>
     <ul>
       <li><code>.com 到 .cn</code>：把国际域名引到国内 CDN，通常是默认推荐方向。开启智能兜底后，如果目标 CDN 缺资源或返回异常，会自动绕回原地址，避免下载失败。</li>
       <li><code>.cn 到 .com</code>：这是反向绕回，用于少数情况下 cn 域名回源很慢，反而不如给 com 域名配置代理后走代理下载。正常情况下保持关闭。</li>
@@ -270,13 +275,28 @@ function openRedirectHelp(){
     <h3>推荐配置</h3>
     <ul>
       <li>一般家庭网络：开启 <code>.com 到 .cn</code> 和智能兜底，关闭反向绕回。</li>
-      <li>如果确认 <code>assets1.xboxlive.cn</code> 下载很慢，并且路由器或网关已经能让 <code>assets1.xboxlive.com</code> 走代理，再单独开启 <code>assets1.xboxlive.cn 到 assets1.xboxlive.com</code>。</li>
+      <li>需要改用反向规则时，先关闭同一对域名的正向规则，再开启反向规则，避免循环跳转。</li>
       <li>改动后建议观察实时日志。出现 302 记录说明重写层已经命中；如果下载失败，优先关闭反向规则或保留智能兜底。</li>
     </ul>
   </div>`;
 }
 
-async function saveCfg(){ await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}); }
+function saveCfg(){
+  const body = JSON.stringify(cfg);
+  pendingSaves++;
+  const request = saveChain.catch(()=>{}).then(()=>api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body}));
+  saveChain = request;
+  return request.finally(()=>pendingSaves--);
+}
+async function pinPlatform(key){
+  const value = prompt('锁定 '+key+' 的 IPv4 地址，留空恢复自动选择：',cfg.platforms[key]?.pinned_ip||'');
+  if(value===null) return;
+  cfg.platforms[key].pinned_ip=value.trim();
+  await saveCfg();
+  flash(value.trim()?'已锁定下载 IP':'已恢复自动选择');
+  await refresh();
+}
+window.addEventListener('unhandledrejection',event=>{ flash(event.reason?.message||String(event.reason)); event.preventDefault(); if(!pendingSaves) refresh().catch(()=>{}); });
 async function togglePlatform(key,field,val){ if(!cfg.platforms[key]) cfg.platforms[key]={enabled:false,speedtest:false,pinned_ip:''}; cfg.platforms[key][field]=val; await saveCfg(); refresh(); }
 async function toggleRedirect(){ cfg.redirect.enabled=document.getElementById('redEnabled').checked; await saveCfg(); refresh(); }
 async function toggleSmart(){ cfg.redirect.smart_fallback=document.getElementById('redSmart').checked; await saveCfg(); refresh(); }

@@ -8,10 +8,12 @@ package speedtest
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -153,7 +155,7 @@ func (e *Engine) testPool(ctx context.Context, poolName string, candidates []str
 
 	// 测速 URL 为空：只按 ping 排序，最快=延迟最低。
 	if strings.TrimSpace(testURL) == "" {
-		best := pool.ComputeBest()
+		best := pool.ComputeBestByLatency()
 		e.logs.Log(logstore.KindSpeedTest, poolName, "",
 			fmt.Sprintf("仅 ping 排序，候选 %d，最快 %s", len(candidates), best))
 		return
@@ -171,22 +173,17 @@ func (e *Engine) testPool(ctx context.Context, poolName string, candidates []str
 		pool.RetainSpeeds(topIPs)
 	}
 
-	var dwg sync.WaitGroup
-	dsem := make(chan struct{}, 8)
+	// Sequential samples compare nodes without making them share our WAN bandwidth.
 	for _, r := range results {
+		if ctx.Err() != nil {
+			return
+		}
 		if fullRun && freshness > 0 && pool.Fresh(r.ip, freshness) {
 			continue
 		}
-		dwg.Add(1)
-		dsem <- struct{}{}
-		go func(ip string) {
-			defer dwg.Done()
-			defer func() { <-dsem }()
-			speed := e.downloadSpeed(ctx, ip, testURL, dlBytes, timeout)
-			pool.UpdateSpeed(ip, speed)
-		}(r.ip)
+		speed := e.downloadSpeed(ctx, r.ip, testURL, dlBytes, timeout)
+		pool.UpdateSpeed(r.ip, speed)
 	}
-	dwg.Wait()
 
 	best := pool.ComputeBest()
 	loc := pool.Location(best)
@@ -250,7 +247,7 @@ func tcpPing(ip string, timeout time.Duration) (float64, bool) {
 // downloadSpeed 连到 ip、按测速 URL 的 Host 取一段数据，返回 MiB/s。
 func (e *Engine) downloadSpeed(ctx context.Context, ip, testURL string, dlBytes int64, timeout time.Duration) float64 {
 	u, err := url.Parse(testURL)
-	if err != nil {
+	if err != nil || dlBytes <= 0 || (u.Scheme != "http" && u.Scheme != "https") {
 		return 0
 	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
@@ -261,6 +258,7 @@ func (e *Engine) downloadSpeed(ctx context.Context, ip, testURL string, dlBytes 
 		return 0
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", dlBytes-1))
+	req.Header.Set("Accept-Encoding", "identity")
 	ua := "XboxDownload"
 	if strings.HasSuffix(strings.ToLower(u.Hostname()), ".nintendo.net") {
 		ua = "XboxDownload/Nintendo NX"
@@ -276,16 +274,25 @@ func (e *Engine) downloadSpeed(ctx context.Context, ip, testURL string, dlBytes 
 		return 0
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return 0
+	}
+	if resp.StatusCode == http.StatusPartialContent && !validContentRange(resp.Header.Get("Content-Range"), dlBytes) {
 		return 0
 	}
 
 	buf := make([]byte, 64*1024)
 	var total int64
+	reader := io.LimitReader(resp.Body, dlBytes)
 	for {
-		n, rerr := resp.Body.Read(buf)
+		n, rerr := reader.Read(buf)
 		total += int64(n)
 		if rerr != nil {
+			// A timed sample may finish at the deadline, but broken/truncated bodies
+			// must not be promoted as healthy CDN responses.
+			if rerr != io.EOF && cctx.Err() == nil {
+				return 0
+			}
 			break
 		}
 		if cctx.Err() != nil {
@@ -293,8 +300,31 @@ func (e *Engine) downloadSpeed(ctx context.Context, ip, testURL string, dlBytes 
 		}
 	}
 	elapsed := time.Since(start).Seconds()
-	if elapsed < 0.1 || total == 0 {
+	minBytes := int64(64 * 1024)
+	if dlBytes < minBytes {
+		minBytes = dlBytes
+	}
+	if elapsed <= 0 || total < minBytes {
 		return 0
 	}
 	return float64(total) / (1024.0 * 1024.0 * elapsed)
+}
+
+func validContentRange(value string, limit int64) bool {
+	if !strings.HasPrefix(value, "bytes 0-") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(value, "bytes 0-"), "/")
+	if len(parts) != 2 {
+		return false
+	}
+	end, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || end < 0 || end >= limit {
+		return false
+	}
+	if parts[1] == "*" {
+		return true
+	}
+	size, err := strconv.ParseInt(parts[1], 10, 64)
+	return err == nil && size > end
 }

@@ -9,15 +9,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"xboxspeedup/internal/config"
 	"xboxspeedup/internal/ipstore"
 	"xboxspeedup/internal/logstore"
+	"xboxspeedup/internal/persist"
 	"xboxspeedup/internal/rules"
 )
 
@@ -32,6 +35,7 @@ type Syncer struct {
 	logs   *logstore.Store
 	ipDir  string
 	client *http.Client
+	mu     sync.Mutex
 }
 
 // New 创建同步器；ipDir 是本地缓存目录（如 /data/ip）。
@@ -63,8 +67,13 @@ func (s *Syncer) LoadLocal() {
 
 // SyncAll 同步全部池，返回每个池新增的 IP（供增量测速）。
 func (s *Syncer) SyncAll(ctx context.Context) map[string][]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	added := make(map[string][]string)
 	for poolName, pool := range s.table.Pools {
+		if ctx.Err() != nil {
+			break
+		}
 		newIPs, err := s.syncPool(ctx, poolName, pool)
 		if err != nil {
 			s.logs.Log(logstore.KindSync, pool.IPFile, "", "同步失败: "+err.Error())
@@ -85,12 +94,12 @@ func (s *Syncer) syncPool(ctx context.Context, poolName string, pool rules.Pool)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.writeCache(pool.IPFile, content); err != nil {
-		s.logs.Log(logstore.KindSync, pool.IPFile, "", "写缓存失败: "+err.Error())
-	}
 	entries := parseIPList(content)
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("解析到 0 个 IP")
+	}
+	if err := s.writeCache(pool.IPFile, content); err != nil {
+		return nil, fmt.Errorf("写缓存失败: %w", err)
 	}
 	return s.store.Pool(poolName).SetList(entries), nil
 }
@@ -114,6 +123,10 @@ func (s *Syncer) fetch(ctx context.Context, file, keyword string) (string, error
 			lastErr = fmt.Errorf("内容校验失败(首行非 %q)", keyword)
 			continue
 		}
+		if len(parseIPList(body)) == 0 {
+			lastErr = fmt.Errorf("源返回的列表没有有效 IPv4")
+			continue
+		}
 		return body, nil
 	}
 	if lastErr == nil {
@@ -135,9 +148,12 @@ func (s *Syncer) get(ctx context.Context, url string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
 	if err != nil {
 		return "", err
+	}
+	if len(body) > 4<<20 {
+		return "", fmt.Errorf("IP 列表超过 4 MiB")
 	}
 	return string(body), nil
 }
@@ -146,13 +162,14 @@ func (s *Syncer) writeCache(file, content string) error {
 	if err := os.MkdirAll(s.ipDir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(s.ipDir, file), []byte(content), 0o644)
+	return persist.WriteFile(filepath.Join(s.ipDir, file), []byte(content), 0o644)
 }
 
 // parseIPList 解析 IP 列表文本：跳过首行关键字，逐行取 "IP\t(位置)"。
 func parseIPList(content string) []ipstore.IPEntry {
 	lines := strings.Split(content, "\n")
 	var out []ipstore.IPEntry
+	seen := make(map[string]bool)
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if i == 0 || line == "" || strings.HasPrefix(line, "#") {
@@ -165,9 +182,15 @@ func parseIPList(content string) []ipstore.IPEntry {
 			ip = strings.TrimSpace(line[:idx])
 			loc = strings.Trim(strings.TrimSpace(line[idx:]), "()")
 		}
-		if ip == "" {
+		parsed := net.ParseIP(ip)
+		if parsed == nil || parsed.To4() == nil || parsed.IsUnspecified() || parsed.IsMulticast() {
 			continue
 		}
+		ip = parsed.To4().String()
+		if seen[ip] {
+			continue
+		}
+		seen[ip] = true
 		out = append(out, ipstore.IPEntry{IP: ip, Location: loc})
 	}
 	return out

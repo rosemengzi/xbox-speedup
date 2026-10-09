@@ -1,9 +1,17 @@
 services:
   xbox-speedup:
-    image: ghcr.io/ahaduoduoduo/xbox-speedup:latest
+    image: ${XBOX_IMAGE:-ghcr.io/rosemengzi/xbox-speedup:latest}
     pull_policy: always
     container_name: xbox-speedup
     restart: unless-stopped
+    environment:
+      XBOX_WEB_TOKEN: ${XBOX_WEB_TOKEN:-}
+      XBOX_HEALTH_URL: ${XBOX_HEALTH_URL:-http://127.0.0.1:8080/healthz}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     cap_add:
       - NET_RAW
     networks:

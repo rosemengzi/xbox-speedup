@@ -1,13 +1,19 @@
-// Package config 负责运行期配置的加载、持久化与无锁热替换。
-//
-// 读取走 atomic.Pointer，调用方拿到的快照按只读对待；
-// 修改走 Replace（先落盘再原子换指针），保证并发安全。
+// Package config validates, persists and serializes runtime configuration changes.
 package config
 
 import (
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
+
+	"github.com/miekg/dns"
+	"github.com/robfig/cron/v3"
+	"xboxspeedup/internal/persist"
 
 	"gopkg.in/yaml.v3"
 )
@@ -60,6 +66,7 @@ type PlatformToggle struct {
 type Redirect struct {
 	Enabled       bool           `yaml:"enabled" json:"enabled"`
 	SmartFallback bool           `yaml:"smart_fallback" json:"smart_fallback"`
+	TLSAddr       string         `yaml:"tls_addr" json:"tls_addr"` // 下载 TLS 透传，随重写层启停
 	Rules         []RedirectRule `yaml:"rules" json:"rules"`
 }
 
@@ -91,7 +98,7 @@ type IPSync struct {
 func Default() *Config {
 	return &Config{
 		Listen:      Listen{DNS: ":53", HTTP: ":80", Web: ":8080"},
-		WebTLS:      WebTLS{Enabled: false, Addr: ":443", CertFile: "/certs/fullchain.pem", KeyFile: "/certs/privkey.pem"},
+		WebTLS:      WebTLS{Enabled: false, Addr: ":8443", CertFile: "/certs/fullchain.pem", KeyFile: "/certs/privkey.pem"},
 		AdvertiseIP: "",
 		Upstream:    Upstream{DNS: []string{"223.5.5.5:53", "119.29.29.29:53"}},
 		IPv6Filter:  true,
@@ -109,6 +116,7 @@ func Default() *Config {
 		Redirect: Redirect{
 			Enabled:       false,
 			SmartFallback: true,
+			TLSAddr:       ":443",
 			Rules: []RedirectRule{
 				{From: "assets1.xboxlive.com", To: "assets1.xboxlive.cn", Enabled: true},
 				{From: "assets2.xboxlive.com", To: "assets2.xboxlive.cn", Enabled: true},
@@ -139,12 +147,14 @@ func Default() *Config {
 	}
 }
 
-// Manager 持有当前配置并提供无锁读取 + 落盘热替换。
+// Manager serializes disk writes and callbacks; Get snapshots are immutable.
 type Manager struct {
-	path    string
-	cur     *Config
-	mu      sync.RWMutex
-	onApply []func(*Config)
+	path      string
+	cur       *Config
+	mu        sync.RWMutex
+	applyMu   sync.Mutex
+	onApply   []func(*Config) error
+	validator func(*Config) error
 }
 
 // NewManager 从 path 加载配置；文件不存在则写入默认配置。
@@ -156,7 +166,9 @@ func NewManager(path string) (*Manager, error) {
 	}
 	m.cur = cfg
 	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
-		_ = save(path, cfg)
+		if err := save(path, cfg); err != nil {
+			return nil, fmt.Errorf("保存默认配置失败: %w", err)
+		}
 	}
 	return m, nil
 }
@@ -174,6 +186,9 @@ func load(path string) (*Config, error) {
 		return nil, fmt.Errorf("解析配置失败: %w", err)
 	}
 	normalize(cfg)
+	if err := Validate(cfg); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -197,6 +212,13 @@ func normalize(c *Config) {
 	}
 	if c.WebTLS.KeyFile == "" {
 		c.WebTLS.KeyFile = d.WebTLS.KeyFile
+	}
+	if c.Redirect.TLSAddr == "" {
+		c.Redirect.TLSAddr = d.Redirect.TLSAddr
+	}
+	for i := range c.Redirect.Rules {
+		c.Redirect.Rules[i].From = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(c.Redirect.Rules[i].From)), ".")
+		c.Redirect.Rules[i].To = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(c.Redirect.Rules[i].To)), ".")
 	}
 	if len(c.Upstream.DNS) == 0 {
 		c.Upstream.DNS = d.Upstream.DNS
@@ -237,7 +259,7 @@ func save(path string, c *Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o644)
+	return persist.WriteFile(path, raw, 0o644)
 }
 
 // Get 返回当前配置快照（只读对待）。
@@ -249,23 +271,191 @@ func (m *Manager) Get() *Config {
 
 // Replace 落盘并原子替换当前配置，随后触发已注册的回调。
 func (m *Manager) Replace(c *Config) error {
+	m.applyMu.Lock()
+	defer m.applyMu.Unlock()
+	c = Clone(c)
 	normalize(c)
+	if err := Validate(c); err != nil {
+		return err
+	}
+	if m.validator != nil {
+		if err := m.validator(c); err != nil {
+			return err
+		}
+	}
 	if err := save(m.path, c); err != nil {
 		return err
 	}
 	m.mu.Lock()
+	old := m.cur
 	m.cur = c
-	cbs := append([]func(*Config){}, m.onApply...)
+	cbs := append([]func(*Config) error{}, m.onApply...)
 	m.mu.Unlock()
 	for _, cb := range cbs {
-		cb(c)
+		if err := cb(c); err != nil {
+			m.mu.Lock()
+			m.cur = old
+			m.mu.Unlock()
+			rollbackErr := save(m.path, old)
+			for _, restore := range cbs {
+				rollbackErr = errors.Join(rollbackErr, restore(old))
+			}
+			return errors.Join(fmt.Errorf("配置应用失败: %w", err), rollbackErr)
+		}
 	}
 	return nil
 }
 
 // OnApply 注册配置变更回调（如 DNS / 代理重建索引）。
-func (m *Manager) OnApply(fn func(*Config)) {
+func (m *Manager) OnApply(fn func(*Config) error) {
 	m.mu.Lock()
 	m.onApply = append(m.onApply, fn)
 	m.mu.Unlock()
+}
+
+func (m *Manager) SetValidator(fn func(*Config) error) {
+	m.applyMu.Lock()
+	defer m.applyMu.Unlock()
+	m.validator = fn
+}
+
+// Clone owns all mutable maps/slices, avoiding changes through caller aliases.
+func Clone(c *Config) *Config {
+	out := *c
+	if c.Platforms != nil {
+		out.Platforms = make(map[string]PlatformToggle, len(c.Platforms))
+	}
+	for name, toggle := range c.Platforms {
+		out.Platforms[name] = toggle
+	}
+	out.Upstream.DNS = append([]string(nil), c.Upstream.DNS...)
+	out.Redirect.Rules = append([]RedirectRule(nil), c.Redirect.Rules...)
+	out.IPSync.Proxies = append([]string(nil), c.IPSync.Proxies...)
+	return &out
+}
+
+// RestartRequired reports fields whose sockets/files are only loaded at startup.
+func RestartRequired(started, desired *Config) bool {
+	return started.Listen != desired.Listen || started.WebTLS != desired.WebTLS ||
+		started.AdvertiseIP != desired.AdvertiseIP || started.Redirect.TLSAddr != desired.Redirect.TLSAddr ||
+		started.DataDir != desired.DataDir
+}
+
+func Validate(c *Config) error {
+	for name, addr := range map[string]string{"DNS": c.Listen.DNS, "HTTP": c.Listen.HTTP, "Web": c.Listen.Web, "Web TLS": c.WebTLS.Addr, "download TLS": c.Redirect.TLSAddr} {
+		if err := validateAddress(addr); err != nil {
+			return fmt.Errorf("%s 监听地址无效: %w", name, err)
+		}
+	}
+	if c.WebTLS.Enabled && c.Redirect.Enabled {
+		_, webPort, _ := net.SplitHostPort(c.WebTLS.Addr)
+		_, downloadPort, _ := net.SplitHostPort(c.Redirect.TLSAddr)
+		if webPort == downloadPort && webPort != "0" {
+			return fmt.Errorf("管理 HTTPS 与下载 TLS 不能共用端口，请将 web_tls.addr 改为 :8443")
+		}
+	}
+	validIP := func(ip string) bool {
+		parsed := net.ParseIP(ip)
+		return parsed != nil && parsed.To4() != nil && !parsed.IsUnspecified() && !parsed.IsMulticast()
+	}
+	if c.AdvertiseIP != "" && !validIP(c.AdvertiseIP) {
+		return fmt.Errorf("advertise_ip 必须是有效 IPv4 地址")
+	}
+	for name, toggle := range c.Platforms {
+		if toggle.PinnedIP != "" && !validIP(toggle.PinnedIP) {
+			return fmt.Errorf("平台 %s 的 pinned_ip 必须是有效 IPv4 地址", name)
+		}
+	}
+	for _, addr := range c.Upstream.DNS {
+		if err := validateAddress(addr); err != nil {
+			return fmt.Errorf("上游 DNS 地址无效: %w", err)
+		}
+	}
+	for name, schedule := range map[string]string{"speedtest": c.SpeedTest.Schedule, "ip_sync": c.IPSync.Schedule} {
+		if schedule == "" && ((name == "speedtest" && !c.SpeedTest.Enabled) || (name == "ip_sync" && !c.IPSync.Enabled)) {
+			continue
+		}
+		if _, err := cron.ParseStandard(schedule); err != nil {
+			return fmt.Errorf("%s 周期无效: %w", name, err)
+		}
+	}
+	if c.SpeedTest.PingTopN > 100 || c.SpeedTest.DownloadMB > 1024 || c.SpeedTest.TimeoutSeconds > 120 || c.SpeedTest.FreshnessMinutes > 1440 {
+		return fmt.Errorf("测速参数超出范围（top-N ≤100、下载 ≤1024 MiB、超时 ≤120 秒、新鲜度 ≤1440 分钟）")
+	}
+	graph := make(map[string]string)
+	seen := make(map[string]bool)
+	for _, rule := range c.Redirect.Rules {
+		if _, ok := dns.IsDomainName(rule.From); !ok || strings.ContainsAny(rule.From, ":/\\") || rule.From == "" {
+			return fmt.Errorf("重写源域名无效: %q", rule.From)
+		}
+		target := rule.To
+		if host, _, err := net.SplitHostPort(target); err == nil {
+			if err := validateAddress(target); err != nil {
+				return err
+			}
+			target = host
+		}
+		if _, ok := dns.IsDomainName(target); !ok || strings.ContainsAny(target, ":/\\") || target == "" {
+			return fmt.Errorf("重写目标域名无效: %q", rule.To)
+		}
+		if seen[rule.From] {
+			return fmt.Errorf("重写源域名重复: %s", rule.From)
+		}
+		seen[rule.From] = true
+		if rule.Enabled {
+			graph[rule.From] = target
+		}
+	}
+	for _, prefix := range c.IPSync.Proxies {
+		if prefix == "" {
+			continue
+		}
+		u, err := url.Parse(prefix)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("IP 同步代理前缀无效")
+		}
+	}
+	return ValidateRedirectGraph(graph)
+}
+
+func validateAddress(addr string) error {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 0 || n > 65535 {
+		return fmt.Errorf("端口无效: %q", port)
+	}
+	return nil
+}
+
+func ValidateRedirectGraph(graph map[string]string) error {
+	visited := make(map[string]uint8)
+	var visit func(string) error
+	visit = func(host string) error {
+		if visited[host] == 1 {
+			return fmt.Errorf("重写规则形成循环: %s", host)
+		}
+		if visited[host] == 2 {
+			return nil
+		}
+		visited[host] = 1
+		if target, ok := graph[host]; ok {
+			if h, _, err := net.SplitHostPort(target); err == nil {
+				target = h
+			}
+			if err := visit(target); err != nil {
+				return err
+			}
+		}
+		visited[host] = 2
+		return nil
+	}
+	for host := range graph {
+		if err := visit(host); err != nil {
+			return err
+		}
+	}
+	return nil
 }

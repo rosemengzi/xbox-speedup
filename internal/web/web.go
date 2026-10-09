@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -33,6 +35,9 @@ type Deps struct {
 	TriggerSpeedTest func(pool string)
 	TriggerSync      func()
 	SpeedTestRunning func() bool
+	AdminToken       string
+	StartedConfig    *config.Config
+	Healthy          func() bool
 }
 
 // Server 是 Web 管理服务。
@@ -61,7 +66,7 @@ func (s *Server) mux() *http.ServeMux {
 
 // Start 监听明文 HTTP addr。
 func (s *Server) Start(addr string) error {
-	srv := &http.Server{Addr: addr, Handler: s.mux(), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: s.guard(s.mux()), ReadHeaderTimeout: 10 * time.Second}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -77,7 +82,7 @@ func (s *Server) StartTLS(addr, certFile, keyFile string) error {
 	if err != nil {
 		return err
 	}
-	srv := &http.Server{Addr: addr, Handler: s.mux(), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: s.guard(s.mux()), ReadHeaderTimeout: 10 * time.Second}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -106,6 +111,7 @@ type platformStatus struct {
 	Hidden      bool    `json:"hidden"`
 	Pinned      string  `json:"pinned"`
 	BestIP      string  `json:"best_ip"`
+	AutoIP      string  `json:"auto_ip"`
 	BestLoc     string  `json:"best_loc"`
 	BestRTT     float64 `json:"best_rtt"`
 	BestSpeed   float64 `json:"best_speed"`
@@ -122,6 +128,7 @@ type statusResp struct {
 	ProxyRunning    bool             `json:"proxy_running"`
 	SpeedTestBusy   bool             `json:"speedtest_running"`
 	Platforms       []platformStatus `json:"platforms"`
+	RestartRequired bool             `json:"restart_required"`
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
@@ -136,6 +143,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		ProxyRunning:    s.d.Proxy.Running(),
 		SpeedTestBusy:   s.d.SpeedTestRunning != nil && s.d.SpeedTestRunning(),
 	}
+	if s.d.StartedConfig != nil {
+		resp.Listen = s.d.StartedConfig.Listen
+		resp.RestartRequired = config.RestartRequired(s.d.StartedConfig, c)
+	}
 
 	keys := make([]string, 0, len(s.d.Table.Platforms))
 	for k := range s.d.Table.Platforms {
@@ -148,6 +159,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		tg := c.Platforms[k]
 		pool := s.d.Store.Pool(p.Pool)
 		best := pool.Best()
+		autoIP := best
+		if tg.PinnedIP != "" {
+			best = tg.PinnedIP
+		}
+		if !tg.Enabled || tg.Hidden {
+			best = ""
+		}
 		ps := platformStatus{
 			Key:         k,
 			Description: p.Description,
@@ -157,7 +175,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 			Hidden:      tg.Hidden,
 			Pinned:      tg.PinnedIP,
 			BestIP:      best,
-			IPCount:     len(pool.IPs()),
+			AutoIP:      autoIP,
+			BestRTT:     -1, BestSpeed: -1,
+			IPCount: len(pool.IPs()),
 		}
 		for _, r := range pool.Records() {
 			if r.IP == best {
@@ -180,12 +200,18 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.d.Cfg.Get())
 	case http.MethodPost:
 		var c config.Config
-		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&c); err != nil {
 			http.Error(w, "无效配置: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			http.Error(w, "配置必须是单个 JSON 对象", http.StatusBadRequest)
+			return
+		}
 		if err := s.d.Cfg.Replace(&c); err != nil {
-			http.Error(w, "保存失败: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "配置未应用: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		s.d.Logs.Log(logstore.KindSystem, "", "", "配置已更新")
@@ -213,11 +239,18 @@ func (s *Server) handleLogsSSE(w http.ResponseWriter, r *http.Request) {
 
 	ch, cancel := s.d.Logs.Subscribe()
 	defer cancel()
+	fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+	heartbeat := time.NewTicker(20 * time.Second)
+	defer heartbeat.Stop()
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-heartbeat.C:
+			fmt.Fprint(w, ": heartbeat\n\n")
+			flusher.Flush()
 		case e := <-ch:
 			data, _ := json.Marshal(e)
 			fmt.Fprintf(w, "data: %s\n\n", data)
@@ -234,6 +267,10 @@ func (s *Server) handlePool(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing pool name", http.StatusBadRequest)
 		return
 	}
+	if _, known := s.d.Table.Pools[name]; !known {
+		http.Error(w, "unknown pool", http.StatusBadRequest)
+		return
+	}
 	pool := s.d.Store.Pool(name)
 	writeJSON(w, struct {
 		Name    string           `json:"name"`
@@ -245,15 +282,43 @@ func (s *Server) handlePool(w http.ResponseWriter, r *http.Request) {
 // ---- 动作 ----
 
 func (s *Server) handleSpeedTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var body struct {
 		Pool string `json:"pool"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "无效测速请求", http.StatusBadRequest)
+		return
+	}
+	if body.Pool != "" {
+		if _, known := s.d.Table.Pools[body.Pool]; !known {
+			http.Error(w, "unknown pool", http.StatusBadRequest)
+			return
+		}
+		allowed := false
+		for name, platform := range s.d.Table.Platforms {
+			toggle := s.d.Cfg.Get().Platforms[name]
+			allowed = allowed || (platform.Pool == body.Pool && toggle.Enabled && !toggle.Hidden)
+		}
+		if !allowed {
+			http.Error(w, "平台未启用", http.StatusBadRequest)
+			return
+		}
+	}
 	go s.d.TriggerSpeedTest(body.Pool)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
-func (s *Server) handleSync(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	go s.d.TriggerSync()
 	writeJSON(w, map[string]bool{"ok": true})
 }

@@ -54,10 +54,13 @@ XBOX_IP=192.168.1.250
 XBOX_DATA_DIR=/volume1/docker/xbox
 XBOX_CERT_DIR=/path/to/certificate
 XBOX_NETWORK=xbox_macvlan
+XBOX_WEB_TOKEN=
 ```
 
 `XBOX_IP` 必须与创建 macvlan 时使用的网段一致。`XBOX_CERT_DIR` 中未提供证书也不影响默认的
 HTTP 管理界面，因为 HTTPS 默认关闭。
+
+`XBOX_WEB_TOKEN` 可设置自己的管理密码；留空时首次启动在数据目录生成 `web-token`，后续重启保持不变。管理用户名是 `admin`。
 
 ## 步骤四：拉取镜像并启动
 
@@ -87,9 +90,9 @@ sudo docker compose up -d
 
 ## 步骤五：设置 Xbox
 
-1. 浏览器（**用电脑或手机，不要用 NAS 本机**，原因见下方注意）打开 `http://<容器IP>:8080`，点「立即全量测速」，等各平台选出最快 IP。
+1. 浏览器（**用电脑或手机，不要用 NAS 本机**，原因见下方注意）打开 `http://<容器IP>:8080`，以 `admin` 和管理密码登录，点「立即全量测速」。自动生成的密码可在 NAS 上用 `sudo cat <XBOX_DATA_DIR>/web-token` 查看。
 2. Xbox：设置 → 网络 → 高级设置 → DNS 设置 → 手动 → **主 DNS = 容器 IP**，辅 DNS 留空。
-3. 路由器里**关闭 IPv6**（否则 Xbox 可能绕过加速走 IPv6）。
+3. 有有效 IPv4 节点时服务会过滤匹配域名的 AAAA；若实测 Xbox 仍通过其他路径使用 IPv6，再按网络情况调整 IPv6 设置。
 4. 开始下载游戏。下完记得把 Xbox DNS 改回自动获取。
 
 ## 验证
@@ -101,6 +104,7 @@ nslookup assets1.xboxlive.cn <容器IP>     # 应返回测速选出的国内快 
 ```
 
 Web 界面的「实时连接日志」里，Xbox 下载时会滚出 `DNS-A` 记录（命中的下载域名 + 返回 IP）。
+未完成测速或没有有效节点时会返回上游解析，属于正常回退。访问 `http://<容器IP>:8080/healthz` 可检查服务是否就绪；此接口无需管理密码。
 
 ## 注意事项 / 常见问题
 

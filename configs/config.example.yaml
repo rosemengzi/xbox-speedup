@@ -41,7 +41,7 @@ platforms:
   Ea:         { enabled: false, speedtest: false }
   Battle:     { enabled: false, speedtest: false }
 
-# 80 端口 302 重写层（默认关）。开启后容器才占用 80 端口。
+# HTTP 换源与 HTTPS 透传（默认关）。开启后监听下载 HTTP 和 TLS 端口。
 redirect:
   enabled: false
   tls_addr: ":443"       # 原域名 HTTPS 透传，随重写层启停；需要客户端 SNI

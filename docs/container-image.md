@@ -19,6 +19,14 @@ Compose 文件不包含 `build` 字段，部署主机只负责拉取和运行镜
 
 每次发布同时生成 `linux/amd64` 和 `linux/arm64` 镜像，并附带构建来源证明与 SBOM。
 
+## Fork 首次发布
+
+代码仓库公开不会自动将容器镜像设为公开。GitHub 的个人账号容器包首次发布默认是 Private；详见 [GitHub 包可见性说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)。
+
+构建成功后，在账号的 Packages 中打开 `xbox-speedup`，进入 Package settings。如果希望 NAS 无需登录即可拉取，选择 Change visibility → Public；GitHub 的此项变更不可撤回为 Private。保留私有时，NAS 需先通过 `docker login ghcr.io -u rosemengzi` 登录，密码使用具有 `read:packages` 权限的个人访问令牌，不能使用 GitHub 账号密码。
+
+刚创建的 Fork 若未自动运行构建，可在 Actions → Build container image → Run workflow 选择 `main` 手动触发。
+
 ## 镜像标签
 
 - `latest`：`main` 分支最新成功构建。

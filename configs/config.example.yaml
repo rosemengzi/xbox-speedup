@@ -23,7 +23,7 @@ upstream:
     - "223.5.5.5:53"
     - "119.29.29.29:53"
 
-ipv6_filter: true # 加速域名的 AAAA 返回空，逼游戏机走 IPv4 快 IP
+ipv6_filter: true # 有有效 IPv4 节点时过滤 AAAA；无节点时保留上游解析
 
 log_all_queries: false # 默认只记加速命中；开启会连普通转发查询也记入日志（较刷屏）
 

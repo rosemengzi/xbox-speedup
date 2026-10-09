@@ -24,9 +24,10 @@
 ## 配置与开关
 
 ```yaml
+listen:
+  http: ":80"
 redirect:
   enabled: false
-  addr: ":80"
   tls_addr: ":443"
   smart_fallback: true
 ```

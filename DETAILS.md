@@ -1,12 +1,12 @@
 # 项目架构与工作原理
 
-本说明对应 `rosemengzi/xbox-speedup` 当前修复版。功能入口见 [README](README.md)，部署见 [NAS 指南](docs/deploy-synology.md)，操作见 [使用说明](docs/user-guide.md)。
+本说明对应 `rosemengzi/xbox-speedup` 当前修复版。功能入口见 [README](README.md)，部署见 [威联通指南](docs/deploy-qnap.md) / [群晖指南](docs/deploy-synology.md)，操作见 [使用说明](docs/user-guide.md)。
 
 ## 1. 整体结构
 
 运行形态是 **单个 Go 进程、单个 Docker 容器**。DNS、IP 同步、测速、下载代理、管理 API 与静态网页都在同一个二进制中。没有单独的 dnsmasq/Nginx，没有数据库，也没有 Redis。
 
-Docker 的 macvlan 为容器提供独立局域网 IP。主机把 DNS 指向该 IP；电脑或手机通过同一 IP 的管理端口操作服务。数据目录以 bind mount 持久化。
+默认使用 Docker 的 macvlan 为容器提供独立局域网 IP；威联通也可使用 qnet 提供该地址。主机把 DNS 指向容器 IP；电脑或手机通过同一 IP 的管理端口操作服务。数据目录以 bind mount 持久化。网络驱动由 Docker/Container Station 提供，程序无需按 NAS 品牌更换实现。
 
 ```mermaid
 flowchart TB
@@ -224,7 +224,7 @@ HTTP/TLS 开关在回调中立即启停；DNS 根据代理的实际就绪状态�
 | `443/tcp` | 否 | 换源开启后原域名 TLS 透传 |
 | `8443/tcp` | 否 | 配置证书并启用管理 HTTPS 后监听 |
 
-默认 Compose 使用独立 macvlan IP，不写宿主机端口映射。NAS DSM 的监听与容器 IP 分离；仍需保证容器 IP 和容器内端口没有冲突。
+默认 Compose 使用独立 macvlan IP，不写宿主机端口映射。NAS 的 QTS/QuTS hero/DSM 监听与容器 IP 分离；仍需保证容器 IP 和容器内端口没有冲突。威联通使用 qnet 独立局域网 IP 时也采用相同的访问方式。
 
 | 数据 | 位置/生命周期 |
 | --- | --- |

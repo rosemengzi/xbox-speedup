@@ -1,6 +1,6 @@
 # 详细使用说明
 
-本文面向已经启动容器的用户。首次安装先看 [NAS 部署指南](deploy-synology.md)；功能总览见 [README](../README.md)，模块实现见 [架构说明](../DETAILS.md)。
+本文面向已经启动容器的用户。首次安装先看 [威联通部署指南](deploy-qnap.md) 或 [群晖部署指南](deploy-synology.md)；功能总览见 [README](../README.md)，模块实现见 [架构说明](../DETAILS.md)。
 
 ## 1. 登录与第一次使用
 
@@ -20,6 +20,8 @@ http://<容器IP>:8080
 ```bash
 sudo cat /volume1/docker/xbox-speedup-data/web-token
 ```
+
+威联通按其部署指南的示例目录则执行 `sudo cat /share/Container/xbox-speedup-data/web-token`。实际使用其他目录时，替换为自己挂载到容器 `/data` 的宿主机路径。
 
 页面、API 和实时日志都需要认证；只有 `/healthz` 无需密码。NAS 本机通常不能直接访问 macvlan 容器，登录请使用另一台设备。
 

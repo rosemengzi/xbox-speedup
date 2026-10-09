@@ -2,6 +2,8 @@
 
 部署在 NAS 上的游戏主机下载加速服务。Xbox 把 DNS 指向本服务后，程序会按下载域名选择经过测速的 CDN 节点。无需常开 Windows 客户端，也无需在 NAS 上安装 Go 或自行开发程序。
 
+威联通可通过 **Container Station** 部署，群晖可通过 **Container Manager** 部署。两者使用同一个镜像；macvlan 是 Docker 的通用网络驱动。网卡、虚拟交换机、共享目录和 CPU 架构须按各自 NAS 确认，威联通还可按需使用 qnet。
+
 本仓库是 [rosemengzi/xbox-speedup](https://github.com/rosemengzi/xbox-speedup)，基于 [ahaduoduoduo/xbox-speedup](https://github.com/ahaduoduoduo/xbox-speedup) 修复和扩展。域名及 IP 数据沿用 [skydevil88/XboxDownload](https://github.com/skydevil88/XboxDownload) 的主机加速思路，保留 MIT 许可证。
 
 **建议先使用默认的 DNS 优选模式，比较实际下载速度，再按需开启 HTTP 换源与 HTTPS 透传。** 下载效果取决于运营商、CDN、游戏资源及出口线路，程序不会增加宽带本身的带宽。
@@ -12,7 +14,8 @@
 | --- | --- |
 | 功能、默认行为和快速开始 | 本 README |
 | 模块架构、请求流程、测速算法与配置应用过程 | [架构说明](DETAILS.md) |
-| 群晖/NAS 从准备网络到首次启动的完整步骤 | [部署指南](docs/deploy-synology.md) |
+| 威联通 Container Station、macvlan/qnet、共享目录和首次启动 | [威联通部署指南](docs/deploy-qnap.md) |
+| 群晖 Container Manager、macvlan 和首次启动 | [群晖部署指南](docs/deploy-synology.md) |
 | 管理页面操作、平台开关、锁定 IP、验收和故障排查 | [详细使用说明](docs/user-guide.md) |
 | 所有配置字段、默认值、环境变量及 API 调用 | [配置与 API 参考](docs/configuration.md) |
 | HTTP 换源、智能兜底与 HTTPS 透传的区别 | [下载代理说明](docs/redirect.md) |
@@ -100,7 +103,7 @@ HTTPS 透传保留原域名，不把加密请求强制改成 `.cn`。下载 TLS 
 
 ## 快速开始
 
-以下是流程摘要；IP、网卡、网关和目录必须按实际环境填写。初次部署请按 [完整 NAS 部署指南](docs/deploy-synology.md) 操作。
+以下是默认 macvlan 方式的流程摘要；IP、网卡、网关和目录必须按实际环境填写。初次部署请按 [威联通部署指南](docs/deploy-qnap.md) 或 [群晖部署指南](docs/deploy-synology.md) 操作。威联通的 qnet 与图形界面方式见其专门指南。
 
 1. 在 NAS 上准备本仓库的 `docker-compose.yml` 和 `.env.example`，将示例复制成 `.env`，填写容器 IP、数据目录和证书目录。
 2. 创建一个与局域网对应的 macvlan 网络，并让 `.env` 的 `XBOX_NETWORK` 与其名称一致。
@@ -139,7 +142,7 @@ ghcr.io/rosemengzi/xbox-speedup:latest
 - 管理密码与健康检查不代表 CDN 可用性；`/healthz` 只检查本服务监听就绪。
 - 关闭下载代理会中断经它转发的连接；已经缓存的 DNS 应答不会立即撤销，调整后需等待缓存更新或重连下载。
 - 回归测试覆盖 DNS 回退、上游容错、平台规则、配置回滚、资源探测、TLS 1.2/1.3 原证书透传、测速读取上限、IP 同步和管理认证。GitHub CI 执行 `go test -race ./...`、`go vet ./...` 并构建双架构镜像。
-- 群晖 macvlan、Xbox 实际下载提速和长时间暂停/恢复仍需要实机验收，方法见 [使用说明](docs/user-guide.md)。
+- 威联通 macvlan/qnet、群晖 macvlan、Xbox 实际下载提速和长时间暂停/恢复仍需要实机验收，方法见 [使用说明](docs/user-guide.md)。
 
 ## 许可证
 

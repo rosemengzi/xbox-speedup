@@ -2,7 +2,7 @@
 
 镜像由本仓库的 GitHub Actions 构建并发布到 GHCR。NAS 只拉取和运行，不安装 Go、不执行 `docker build` 或 `docker compose up --build`。
 
-初次部署见 [NAS 指南](deploy-synology.md)，管理操作见 [使用说明](user-guide.md)。以下 NAS 命令按部署指南的目录举例。
+初次部署见 [威联通指南](deploy-qnap.md) / [群晖指南](deploy-synology.md)，管理操作见 [使用说明](user-guide.md)。以下 NAS 命令按群晖目录举例；威联通需将部署目录 `/volume1/docker/xbox-speedup`、数据目录 `/volume1/docker/xbox-speedup-data` 替换为自己的共享文件夹路径，例如 `/share/Container/xbox-speedup`、`/share/Container/xbox-speedup-data`。容器内的 `/data`、`/certs` 保持相同。
 
 ## 1. 镜像地址和架构
 
